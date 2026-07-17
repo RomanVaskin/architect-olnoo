@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Расширен и структурирован `docs/00-VISION.md`: добавлены разделы Mission, Problem Statement, Vision, Target Users, Core Principles и Place in OLNOO (описание позиционирования Architect OLNOO как эталонной вертикали экосистемы OLNOO)
+- Обновлено описание проекта в корневом `README.md` в соответствии с расширенным видением продукта
+- Уточнено описание `00-VISION.md` в таблице `docs/README.md`
+
 ### Added
 
 - Инициализирована базовая структура документации проекта: `docs/`, `specs/`, `src/`
