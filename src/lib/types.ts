@@ -63,6 +63,40 @@ export interface SourceFile {
   uploadedAt: string;
 }
 
+/**
+ * Product-facing generation modes (see specs/exterior-agent.md). These names
+ * are shown to the user and passed to the API; the underlying provider and
+ * model identifiers are resolved server-side only (src/lib/ai/model-registry.ts).
+ */
+export type GenerationMode = "auto" | "fast" | "balanced" | "maximum-quality";
+
+export const GENERATION_MODE_LABELS: Record<GenerationMode, string> = {
+  auto: "Автоматически",
+  fast: "Быстро",
+  balanced: "Сбалансировано",
+  "maximum-quality": "Максимальное качество",
+};
+
+/**
+ * Shown wherever a generated image is displayed. Generation and geometry
+ * verification are separate processes (see docs/01-PRODUCT.md — Human Control) —
+ * the interface must never claim geometry constraints were verified automatically.
+ */
+export const GEOMETRY_VERIFICATION_NOTE = "Автоматическая проверка геометрии не выполнена";
+
+/**
+ * Present only for concepts produced by the real generation pipeline (see
+ * src/app/api/concepts/generate/route.ts). The blob is attached in-memory by
+ * the local project store (src/lib/mvp-local-project-store.ts) when a concept
+ * is read back from IndexedDB — it is never serialized to localStorage or JSON.
+ */
+export interface GeneratedConceptImage {
+  blob: Blob;
+  mimeType: string;
+  mode: GenerationMode;
+  warnings: string[];
+}
+
 export interface Concept {
   id: string;
   label: string;
@@ -70,6 +104,7 @@ export interface Concept {
   state: ProjectState;
   summary: string;
   changeExplanation: string;
+  generatedImage?: GeneratedConceptImage;
 }
 
 export interface ConceptVersionEntry {

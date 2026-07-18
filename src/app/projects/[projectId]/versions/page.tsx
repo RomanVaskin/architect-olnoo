@@ -1,13 +1,13 @@
-import { notFound } from "next/navigation";
-import { getProjectById } from "@/lib/mock-data";
+"use client";
+
+import { useProjectContext } from "@/lib/project-context";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatDate } from "@/lib/utils";
 
-export default async function VersionsPage({ params }: { params: Promise<{ projectId: string }> }) {
-  const { projectId } = await params;
-  const project = getProjectById(projectId);
-  if (!project) notFound();
+export default function VersionsPage() {
+  const { project } = useProjectContext();
+  if (!project) return null;
 
   if (project.versions.length === 0) {
     return (

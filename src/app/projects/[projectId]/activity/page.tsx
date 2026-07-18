@@ -1,11 +1,11 @@
-import { notFound } from "next/navigation";
-import { getProjectById } from "@/lib/mock-data";
+"use client";
+
+import { useProjectContext } from "@/lib/project-context";
 import { ActivityFeed } from "@/components/workspace/activity-feed";
 
-export default async function ActivityPage({ params }: { params: Promise<{ projectId: string }> }) {
-  const { projectId } = await params;
-  const project = getProjectById(projectId);
-  if (!project) notFound();
+export default function ActivityPage() {
+  const { project } = useProjectContext();
+  if (!project) return null;
 
   return <ActivityFeed events={project.activity} emptyLabel="По этому проекту пока нет событий." />;
 }

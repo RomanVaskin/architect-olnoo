@@ -1,19 +1,15 @@
-import { notFound } from "next/navigation";
+"use client";
+
 import { CheckCircle2, Circle } from "lucide-react";
-import { getProjectById } from "@/lib/mock-data";
+import { useProjectContext } from "@/lib/project-context";
 import { Card } from "@/components/ui/card";
 import { ActivityFeed } from "@/components/workspace/activity-feed";
 import { ProjectThumbnail } from "@/components/projects/project-thumbnail";
 import { PROJECT_LIFECYCLE_LABELS } from "@/lib/types";
 
-export default async function ProjectOverviewPage({
-  params,
-}: {
-  params: Promise<{ projectId: string }>;
-}) {
-  const { projectId } = await params;
-  const project = getProjectById(projectId);
-  if (!project) notFound();
+export default function ProjectOverviewPage() {
+  const { project } = useProjectContext();
+  if (!project) return null;
 
   const nextSteps = [
     { label: "Заполнить бриф проекта", done: project.brief.goal.length > 0 && project.brief.mustKeep.length > 0 },

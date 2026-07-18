@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ProjectStateBadge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
+import { GENERATION_MODE_LABELS, GEOMETRY_VERIFICATION_NOTE } from "@/lib/types";
 import { ConceptFeedback } from "./concept-feedback";
+import { ConceptVisual } from "./concept-visual";
 import type { Concept, Feedback } from "@/lib/types";
 
 const PRESERVED_CONSTRAINTS = [
@@ -26,11 +28,6 @@ const PRESERVED_CONSTRAINTS = [
   },
 ] as const;
 
-function sceneClassFor(conceptId: string) {
-  const variant = conceptId.charCodeAt(conceptId.length - 1) % 3;
-  return variant === 0 ? "architect-scene--graphite" : variant === 1 ? "architect-scene--wood" : "";
-}
-
 interface ConceptDetailProps {
   concept: Concept;
   isSelected: boolean;
@@ -49,13 +46,17 @@ export function ConceptDetail({ concept, isSelected, feedback, onAddFeedback, on
       </Button>
 
       <Card className="overflow-hidden">
-        <div className={`architect-scene h-56 ${sceneClassFor(concept.id)}`}>
-          {isSelected ? (
-            <span className="absolute left-3 top-3 z-10 rounded-full bg-action px-2.5 py-1 text-[11px] font-medium text-action-ink">
-              Выбрано
-            </span>
-          ) : null}
-        </div>
+        <ConceptVisual
+          concept={concept}
+          heightClassName="h-56"
+          badge={
+            isSelected ? (
+              <span className="absolute left-3 top-3 z-10 rounded-full bg-action px-2.5 py-1 text-[11px] font-medium text-action-ink">
+                Выбрано
+              </span>
+            ) : null
+          }
+        />
         <div className="flex flex-col gap-4 p-5">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -65,6 +66,11 @@ export function ConceptDetail({ concept, isSelected, feedback, onAddFeedback, on
             <ProjectStateBadge state={concept.state} />
           </div>
           <p className="text-sm text-ink">{concept.summary}</p>
+          {concept.generatedImage ? (
+            <p className="text-xs text-ink-secondary">
+              Режим генерации: {GENERATION_MODE_LABELS[concept.generatedImage.mode]} · {GEOMETRY_VERIFICATION_NOTE}
+            </p>
+          ) : null}
 
           <Button
             type="button"

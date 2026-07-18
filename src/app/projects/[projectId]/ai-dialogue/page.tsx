@@ -1,13 +1,13 @@
-import { notFound } from "next/navigation";
+"use client";
+
 import { Bot, User } from "lucide-react";
-import { getProjectById } from "@/lib/mock-data";
+import { useProjectContext } from "@/lib/project-context";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-export default async function AiDialoguePage({ params }: { params: Promise<{ projectId: string }> }) {
-  const { projectId } = await params;
-  const project = getProjectById(projectId);
-  if (!project) notFound();
+export default function AiDialoguePage() {
+  const { project } = useProjectContext();
+  if (!project) return null;
 
   const transcript = [
     { author: "user" as const, text: project.brief.goal || "Опишите, что вы хотите изменить в доме." },

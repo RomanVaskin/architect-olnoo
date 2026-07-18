@@ -16,6 +16,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import type { GenerationMode } from "@/lib/types";
+import { createDraftProject, saveGeneratedConcepts } from "@/lib/mvp-local-project-store";
+import { GenerationConfirmDialog } from "@/components/projects/generation-confirm-dialog";
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -57,14 +60,27 @@ const steps = ["Тип проекта", "Материалы", "Пожелани�
 const DEFAULT_MUST_KEEP = ["Геометрия и основные пропорции", "Форма и уклон крыши", "Положение окон и дверей"];
 const DEFAULT_MAY_CHANGE = ["Материалы фасада", "Цветовая палитра", "Наружное освещение"];
 
+interface GenerateVariantResponse {
+  status: "succeeded" | "failed";
+  mode: string;
+  mimeType?: string;
+  imageBase64?: string;
+  warnings: string[];
+  error?: { code: string; message: string };
+}
+
 function formatFileSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} КБ`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
+const CONCEPT_LABELS = ["A", "B", "C"];
+
 export function NewProjectWizard() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const [step, setStep] = useState(0);
   const [projectType, setProjectType] = useState("existing-house");
   const [files, setFiles] = useState<File[]>([]);
@@ -75,6 +91,14 @@ export function NewProjectWizard() {
   const [mustKeep, setMustKeep] = useState(DEFAULT_MUST_KEEP);
   const [mayChange, setMayChange] = useState(DEFAULT_MAY_CHANGE);
   const [explicitChanges, setExplicitChanges] = useState("");
+
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [mode, setMode] = useState<GenerationMode>("auto");
+  const [variantCount, setVariantCount] = useState<1 | 3>(1);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+
+  const rasterFileCount = useMemo(() => files.filter((file) => file.type !== "application/pdf").length, [files]);
 
   const canContinue = useMemo(() => {
     if (step === 0) return projectType === "existing-house";
@@ -126,7 +150,110 @@ export function NewProjectWizard() {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    router.push("/projects/dom-na-valdae?created=1");
+    if (rasterFileCount === 0) {
+      setFileError("Для генерации нужна хотя бы одна фотография в формате JPEG, PNG или WebP (PDF пока не поддерживается моделью).");
+      setStep(1);
+      return;
+    }
+    setGenerationError(null);
+    setShowConfirmDialog(true);
+  }
+
+  function cancelGeneration() {
+    abortControllerRef.current?.abort();
+  }
+
+  async function confirmAndGenerate() {
+    if (isGenerating) return; // guard against duplicate submissions
+    setIsGenerating(true);
+    setGenerationError(null);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const formData = new FormData();
+      files
+        .filter((file) => file.type !== "application/pdf")
+        .forEach((file) => formData.append("images", file));
+      formData.append("goal", goal);
+      formData.append("explicitChanges", explicitChanges);
+      formData.append("mustKeep", JSON.stringify(mustKeep));
+      formData.append("mayChange", JSON.stringify(mayChange));
+      formData.append("mode", mode);
+      formData.append("variantCount", String(variantCount));
+
+      const response = await fetch("/api/concepts/generate", {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setGenerationError(payload?.error?.message ?? "Не удалось сгенерировать концепции. Попробуйте ещё раз.");
+        return;
+      }
+
+      const variants = (payload.variants ?? []) as GenerateVariantResponse[];
+      const succeeded = variants.filter((variant) => variant.status === "succeeded" && variant.imageBase64);
+
+      if (succeeded.length === 0) {
+        const firstError = variants.find((variant) => variant.error)?.error?.message;
+        setGenerationError(firstError ?? "Не удалось сгенерировать ни одной концепции. Попробуйте ещё раз.");
+        return;
+      }
+
+      const generatedConcepts = await Promise.all(
+        succeeded.map(async (variant, index) => {
+          const blob = await (await fetch(`data:${variant.mimeType};base64,${variant.imageBase64}`)).blob();
+          return {
+            label: `Концепция ${CONCEPT_LABELS[index] ?? index + 1}`,
+            summary: goal.trim(),
+            changeExplanation: explicitChanges.trim() || goal.trim(),
+            blob,
+            mimeType: variant.mimeType ?? "image/png",
+            mode: variant.mode as GenerationMode,
+            warnings: variant.warnings,
+          };
+        }),
+      );
+
+      const projectId = await createDraftProject({
+        name: projectName.trim(),
+        buildingType: "Частный дом",
+        site: {
+          address: location.trim() || "Не указано",
+          climateZone: "Не указано",
+          areaSqm: 0,
+        },
+        brief: {
+          goal: goal.trim(),
+          mustKeep,
+          mayChange,
+          wantsChanged: explicitChanges.trim() ? [explicitChanges.trim()] : [],
+        },
+        sourceFiles: files.map((file) => ({
+          name: file.name,
+          kind: file.type === "application/pdf" ? "document" : "photo",
+        })),
+      });
+
+      await saveGeneratedConcepts(projectId, generatedConcepts);
+
+      const partial = succeeded.length < variants.length ? "&partial=1" : "";
+      router.push(`/projects/${projectId}/concepts?generated=1${partial}`);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setGenerationError("Генерация отменена. Данные брифа сохранены — можно запустить снова.");
+      } else {
+        setGenerationError("Не удалось связаться с сервером генерации. Проверьте подключение и попробуйте снова.");
+      }
+    } finally {
+      setIsGenerating(false);
+      abortControllerRef.current = null;
+    }
   }
 
   return (
@@ -181,6 +308,9 @@ export function NewProjectWizard() {
         <section aria-labelledby="source-files-title">
           <h1 id="source-files-title" className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">Добавьте исходные материалы</h1>
           <p className="mt-2 max-w-2xl text-sm text-ink-secondary sm:text-base">Начните с фотографии главного фасада. Дополнительно можно приложить другие ракурсы и PDF-чертежи.</p>
+          <p className="mt-2 max-w-2xl text-xs text-ink-secondary">
+            PDF-файлы сохраняются в проекте, но пока не передаются в модель генерации изображений — для генерации нужна хотя бы одна фотография в формате JPEG, PNG или WebP.
+          </p>
           <input ref={inputRef} id="source-files" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf" onChange={addFiles} className="sr-only" />
           <button type="button" onClick={() => inputRef.current?.click()} className="mt-8 flex min-h-56 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-surface px-6 text-center transition-colors hover:border-accent/60 hover:bg-accent-soft">
             <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-surface-soft text-ink-secondary"><Upload className="h-5 w-5" strokeWidth={1.5} /></span>
@@ -234,6 +364,21 @@ export function NewProjectWizard() {
           <Button type="button" disabled={!canContinue} onClick={continueFlow}>{step === steps.length - 1 ? "Создать проект" : "Продолжить"}<ArrowRight className="h-4 w-4" /></Button>
         </div>
       </div>
+
+      {showConfirmDialog ? (
+        <GenerationConfirmDialog
+          fileCount={rasterFileCount}
+          mode={mode}
+          onModeChange={setMode}
+          variantCount={variantCount}
+          onVariantCountChange={setVariantCount}
+          isGenerating={isGenerating}
+          error={generationError}
+          onConfirm={confirmAndGenerate}
+          onCancelGeneration={cancelGeneration}
+          onClose={() => setShowConfirmDialog(false)}
+        />
+      ) : null}
     </div>
   );
 }

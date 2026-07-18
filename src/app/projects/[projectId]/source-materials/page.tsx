@@ -1,11 +1,11 @@
-import { notFound } from "next/navigation";
-import { getProjectById } from "@/lib/mock-data";
+"use client";
+
+import { useProjectContext } from "@/lib/project-context";
 import { FileList } from "@/components/workspace/file-list";
 
-export default async function SourceMaterialsPage({ params }: { params: Promise<{ projectId: string }> }) {
-  const { projectId } = await params;
-  const project = getProjectById(projectId);
-  if (!project) notFound();
+export default function SourceMaterialsPage() {
+  const { project } = useProjectContext();
+  if (!project) return null;
 
   return (
     <FileList

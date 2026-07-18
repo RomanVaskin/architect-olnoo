@@ -1,11 +1,11 @@
-import { notFound } from "next/navigation";
-import { getProjectById } from "@/lib/mock-data";
+"use client";
+
+import { useProjectContext } from "@/lib/project-context";
 import { SelectedConceptView } from "@/components/workspace/selected-concept-view";
 
-export default async function SelectedConceptPage({ params }: { params: Promise<{ projectId: string }> }) {
-  const { projectId } = await params;
-  const project = getProjectById(projectId);
-  if (!project) notFound();
+export default function SelectedConceptPage() {
+  const { project } = useProjectContext();
+  if (!project) return null;
 
   return <SelectedConceptView project={project} />;
 }

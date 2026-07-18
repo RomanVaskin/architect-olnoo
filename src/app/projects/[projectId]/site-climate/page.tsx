@@ -1,5 +1,6 @@
-import { notFound } from "next/navigation";
-import { getProjectById } from "@/lib/mock-data";
+"use client";
+
+import { useProjectContext } from "@/lib/project-context";
 import { Card } from "@/components/ui/card";
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -11,10 +12,9 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default async function SiteAndClimatePage({ params }: { params: Promise<{ projectId: string }> }) {
-  const { projectId } = await params;
-  const project = getProjectById(projectId);
-  if (!project) notFound();
+export default function SiteAndClimatePage() {
+  const { project } = useProjectContext();
+  if (!project) return null;
 
   return (
     <Card className="grid grid-cols-1 gap-6 p-5 sm:grid-cols-3">

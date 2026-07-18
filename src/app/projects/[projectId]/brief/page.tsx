@@ -1,5 +1,6 @@
-import { notFound } from "next/navigation";
-import { getProjectById } from "@/lib/mock-data";
+"use client";
+
+import { useProjectContext } from "@/lib/project-context";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -22,10 +23,9 @@ function BriefList({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-export default async function BriefPage({ params }: { params: Promise<{ projectId: string }> }) {
-  const { projectId } = await params;
-  const project = getProjectById(projectId);
-  if (!project) notFound();
+export default function BriefPage() {
+  const { project } = useProjectContext();
+  if (!project) return null;
 
   if (!project.brief.goal && project.brief.mustKeep.length === 0) {
     return (
