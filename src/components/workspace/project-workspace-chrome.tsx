@@ -32,7 +32,7 @@ export function ProjectWorkspaceChrome({ projectId, children }: { projectId: str
       <div className="flex flex-col gap-6 md:flex-row">
         <WorkspaceNav projectId={projectId} />
         <div className="min-w-0 flex-1">{children}</div>
-        <AiPanel />
+        <AiPanel project={project} />
       </div>
     </div>
   );

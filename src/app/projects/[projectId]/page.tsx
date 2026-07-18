@@ -4,8 +4,11 @@ import { CheckCircle2, Circle } from "lucide-react";
 import { useProjectContext } from "@/lib/project-context";
 import { Card } from "@/components/ui/card";
 import { ActivityFeed } from "@/components/workspace/activity-feed";
+import { ConceptVisual } from "@/components/workspace/concept-visual";
 import { ProjectThumbnail } from "@/components/projects/project-thumbnail";
-import { PROJECT_LIFECYCLE_LABELS } from "@/lib/types";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LinkButton } from "@/components/ui/button";
+import { GEOMETRY_VERIFICATION_NOTE, PROJECT_LIFECYCLE_LABELS } from "@/lib/types";
 
 export default function ProjectOverviewPage() {
   const { project } = useProjectContext();
@@ -18,15 +21,46 @@ export default function ProjectOverviewPage() {
     { label: "Выбрать основную концепцию", done: Boolean(project.selectedConceptId) },
   ];
 
+  // Wizard-created projects (see mvp-local-project-store.ts) only ever hold a
+  // real generated image or nothing at all — they must never show the
+  // decorative demo scene or claim geometry was preserved/verified.
+  const isLocalProject = project.id.startsWith("local-");
+  const latestGeneratedConcept = [...project.concepts].reverse().find((concept) => concept.generatedImage);
+
   return (
     <div className="flex flex-col gap-8">
-      <Card className="overflow-hidden">
-        <ProjectThumbnail seed={project.id} className="h-[260px] w-full sm:h-[340px]" />
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
-          <div><p className="text-sm font-medium text-ink">Основной вид проекта</p><p className="mt-1 text-xs text-ink-secondary">Геометрия зафиксирована · климатические ограничения учтены</p></div>
-          <div className="flex gap-2"><span className="rounded-full bg-surface-soft px-3 py-1 text-xs text-ink-secondary">Геометрия сохранена</span><span className="rounded-full bg-surface-soft px-3 py-1 text-xs text-ink-secondary">Холодный климат</span></div>
-        </div>
-      </Card>
+      {isLocalProject ? (
+        latestGeneratedConcept ? (
+          <Card className="overflow-hidden">
+            <ConceptVisual concept={latestGeneratedConcept} heightClassName="h-[260px] w-full sm:h-[340px]" />
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
+              <div>
+                <p className="text-sm font-medium text-ink">Последняя сгенерированная концепция «{latestGeneratedConcept.label}»</p>
+                <p className="mt-1 text-xs text-ink-secondary">{GEOMETRY_VERIFICATION_NOTE} · Требует проверки специалиста</p>
+              </div>
+              <LinkButton href={`/projects/${project.id}/concepts`} variant="secondary" size="sm">
+                Все концепции
+              </LinkButton>
+            </div>
+          </Card>
+        ) : (
+          <EmptyState
+            title="Концепция ещё не сгенерирована"
+            description="Как только генерация будет завершена и сохранена, здесь появится настоящее изображение результата."
+            action={<LinkButton href={`/projects/${project.id}/concepts`}>Перейти к концепциям</LinkButton>}
+          />
+        )
+      ) : (
+        <Card className="overflow-hidden">
+          <ProjectThumbnail seed={project.id} className="h-[260px] w-full sm:h-[340px]" />
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
+            <div>
+              <p className="text-sm font-medium text-ink">Демонстрационное изображение</p>
+              <p className="mt-1 text-xs text-ink-secondary">Иллюстрация демо-проекта, не результат генерации</p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card className="p-5">
         <h2 className="text-sm font-medium text-ink-secondary">Текущая стадия</h2>
