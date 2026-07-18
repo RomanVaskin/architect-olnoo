@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getProjectById } from "@/lib/mock-data";
-import { ConceptCard } from "@/components/workspace/concept-card";
+import { ConceptsWorkspace } from "@/components/workspace/concepts-workspace";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function ConceptsPage({ params }: { params: Promise<{ projectId: string }> }) {
@@ -17,11 +17,5 @@ export default async function ConceptsPage({ params }: { params: Promise<{ proje
     );
   }
 
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {project.concepts.map((concept) => (
-        <ConceptCard key={concept.id} concept={concept} isSelected={concept.id === project.selectedConceptId} />
-      ))}
-    </div>
-  );
+  return <ConceptsWorkspace project={project} />;
 }
