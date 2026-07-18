@@ -81,7 +81,29 @@ export const geminiProvider: ImageGenerationProvider = {
   },
 };
 
-function mapProviderError(error: unknown): GenerationError {
+/**
+ * Gemini's ApiError does not expose a structured "quota is permanently zero"
+ * flag — the only signal is the numeric limit embedded in the free-form
+ * message text (e.g. "...generate_content_free_tier_requests, limit: 0,
+ * model: ..."). A positive limit that was merely burst through (a transient
+ * per-minute/per-day rate limit) reads as "limit: <N>" with N > 0. This is
+ * used only to pick an error code — the raw provider text itself is never
+ * logged or sent to the client (see errors.ts).
+ */
+export function isQuotaExhaustedMessage(rawMessage: string): boolean {
+  let text = rawMessage;
+  try {
+    const parsed = JSON.parse(rawMessage) as { error?: { message?: string } };
+    if (typeof parsed?.error?.message === "string") {
+      text = parsed.error.message;
+    }
+  } catch {
+    // Not a JSON error body — fall back to scanning the raw text below.
+  }
+  return /limit:\s*0\b/i.test(text);
+}
+
+export function mapProviderError(error: unknown): GenerationError {
   if (error instanceof GenerationError) return error;
 
   if (error instanceof Error && error.name === "AbortError") {
@@ -89,7 +111,10 @@ function mapProviderError(error: unknown): GenerationError {
   }
 
   const status = (error as { status?: number } | null)?.status;
-  if (status === 429) return new GenerationError("rate-limit");
+  if (status === 429) {
+    const rawMessage = error instanceof Error ? error.message : "";
+    return isQuotaExhaustedMessage(rawMessage) ? new GenerationError("quota-exhausted") : new GenerationError("rate-limit");
+  }
   if (status === 408 || status === 504) return new GenerationError("provider-timeout");
 
   return new GenerationError("provider-failure");

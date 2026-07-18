@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --import ./scripts/register-ts-loader.mjs --test $(find src -name '*.test.ts')"
   },
   "dependencies": {
     "@google/genai": "^2.12.0",

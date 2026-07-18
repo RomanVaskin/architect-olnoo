@@ -10,6 +10,7 @@ export type GenerationErrorCode =
   | "provider-timeout"
   | "safety-rejection"
   | "rate-limit"
+  | "quota-exhausted"
   | "malformed-response"
   | "provider-failure"
   | "validation";
@@ -20,6 +21,7 @@ const MESSAGES: Record<GenerationErrorCode, string> = {
   "provider-timeout": "AI-провайдер не ответил вовремя. Попробуйте повторить генерацию ещё раз.",
   "safety-rejection": "Провайдер отклонил запрос по правилам безопасности контента. Измените описание или исходные изображения.",
   "rate-limit": "Превышен лимит запросов к AI-провайдеру. Подождите немного и повторите попытку.",
+  "quota-exhausted": "Квота Gemini API исчерпана или не активирована для этой модели. Проверьте биллинг и квоты вашего проекта Gemini API.",
   "malformed-response": "AI-провайдер вернул некорректный ответ. Попробуйте повторить генерацию.",
   "provider-failure": "Не удалось получить результат от AI-провайдера. Попробуйте повторить генерацию позже.",
   validation: "Проверьте введённые данные и попробуйте снова.",

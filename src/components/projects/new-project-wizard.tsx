@@ -19,6 +19,14 @@ import { cn } from "@/lib/utils";
 import type { GenerationMode } from "@/lib/types";
 import { createDraftProject, saveGeneratedConcepts } from "@/lib/mvp-local-project-store";
 import { GenerationConfirmDialog } from "@/components/projects/generation-confirm-dialog";
+import { MAX_TOTAL_INLINE_IMAGE_BYTES, formatCombinedImageSizeError } from "@/lib/ai/request-validation";
+import {
+  MAX_GENERATION_IMAGES,
+  fileKey,
+  isRasterImage,
+  reconcileGenerationSelection,
+  toggleGenerationSelection,
+} from "@/lib/wizard-generation-selection";
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -97,8 +105,14 @@ export function NewProjectWizard() {
   const [variantCount, setVariantCount] = useState<1 | 3>(1);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generationKeys, setGenerationKeys] = useState<string[]>([]);
 
-  const rasterFileCount = useMemo(() => files.filter((file) => file.type !== "application/pdf").length, [files]);
+  const rasterFiles = useMemo(() => files.filter(isRasterImage), [files]);
+  const generationFiles = useMemo(
+    () => rasterFiles.filter((file) => generationKeys.includes(fileKey(file))),
+    [rasterFiles, generationKeys],
+  );
+  const generationBytes = useMemo(() => generationFiles.reduce((sum, file) => sum + file.size, 0), [generationFiles]);
 
   const canContinue = useMemo(() => {
     if (step === 0) return projectType === "existing-house";
@@ -133,8 +147,19 @@ export function NewProjectWizard() {
     }
 
     setFiles(unique);
+    setGenerationKeys((prev) => reconcileGenerationSelection(unique, prev));
     setFileError("");
     event.target.value = "";
+  }
+
+  function removeFile(file: File) {
+    const next = files.filter((item) => item !== file);
+    setFiles(next);
+    setGenerationKeys((prev) => reconcileGenerationSelection(next, prev));
+  }
+
+  function toggleGeneration(file: File) {
+    setGenerationKeys((prev) => toggleGenerationSelection(prev, fileKey(file)));
   }
 
   function toggleConstraint(value: string, group: "must" | "may") {
@@ -150,8 +175,8 @@ export function NewProjectWizard() {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    if (rasterFileCount === 0) {
-      setFileError("Для генерации нужна хотя бы одна фотография в формате JPEG, PNG или WebP (PDF пока не поддерживается моделью).");
+    if (generationFiles.length === 0) {
+      setFileError("Для генерации нужна хотя бы одна выбранная фотография в формате JPEG, PNG или WebP (PDF пока не поддерживается моделью).");
       setStep(1);
       return;
     }
@@ -165,6 +190,10 @@ export function NewProjectWizard() {
 
   async function confirmAndGenerate() {
     if (isGenerating) return; // guard against duplicate submissions
+    if (generationBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
+      setGenerationError(formatCombinedImageSizeError(generationBytes));
+      return;
+    }
     setIsGenerating(true);
     setGenerationError(null);
 
@@ -173,9 +202,7 @@ export function NewProjectWizard() {
 
     try {
       const formData = new FormData();
-      files
-        .filter((file) => file.type !== "application/pdf")
-        .forEach((file) => formData.append("images", file));
+      generationFiles.forEach((file) => formData.append("images", file));
       formData.append("goal", goal);
       formData.append("explicitChanges", explicitChanges);
       formData.append("mustKeep", JSON.stringify(mustKeep));
@@ -318,15 +345,39 @@ export function NewProjectWizard() {
             <span className="mt-2 text-sm text-ink-secondary">JPG, PNG, WebP или PDF · до 20 МБ · максимум 12 файлов</span>
           </button>
           {fileError ? <p role="alert" className="mt-3 text-sm text-action">{fileError}</p> : null}
+          {rasterFiles.length > MAX_GENERATION_IMAGES ? (
+            <p className="mt-3 rounded-xl border border-border bg-surface-soft px-4 py-3 text-sm text-ink-secondary">
+              Для одной генерации можно использовать не более {MAX_GENERATION_IMAGES} фотографий — отмечено {generationFiles.length} из {MAX_GENERATION_IMAGES}. Остальные фотографии останутся в проекте как материалы, но не будут отправлены в модель.
+            </p>
+          ) : null}
+          {generationBytes > MAX_TOTAL_INLINE_IMAGE_BYTES ? (
+            <p role="alert" className="mt-3 text-sm text-action">{formatCombinedImageSizeError(generationBytes)}</p>
+          ) : null}
           {files.length > 0 ? (
             <div className="mt-5 divide-y divide-border rounded-2xl border border-border">
-              {files.map((file) => (
-                <div key={`${file.name}-${file.size}`} className="flex items-center gap-3 px-4 py-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-ink-secondary">{file.type === "application/pdf" ? <FileText className="h-4 w-4" /> : <FileImage className="h-4 w-4" />}</span>
-                  <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-ink">{file.name}</span><span className="text-xs text-ink-secondary">{formatFileSize(file.size)}</span></span>
-                  <button type="button" onClick={() => setFiles(files.filter((item) => item !== file))} aria-label={`Удалить ${file.name}`} className="flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-soft hover:text-ink"><Trash2 className="h-4 w-4" /></button>
-                </div>
-              ))}
+              {files.map((file) => {
+                const showGenerationToggle = isRasterImage(file) && rasterFiles.length > MAX_GENERATION_IMAGES;
+                const isSelectedForGeneration = generationKeys.includes(fileKey(file));
+                return (
+                  <div key={fileKey(file)} className="flex items-center gap-3 px-4 py-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-ink-secondary">{file.type === "application/pdf" ? <FileText className="h-4 w-4" /> : <FileImage className="h-4 w-4" />}</span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-ink">{file.name}</span><span className="text-xs text-ink-secondary">{formatFileSize(file.size)}</span></span>
+                    {showGenerationToggle ? (
+                      <label className="flex shrink-0 items-center gap-2 text-xs text-ink-secondary">
+                        <input
+                          type="checkbox"
+                          checked={isSelectedForGeneration}
+                          disabled={!isSelectedForGeneration && generationKeys.length >= MAX_GENERATION_IMAGES}
+                          onChange={() => toggleGeneration(file)}
+                          className="h-4 w-4 accent-[var(--color-action)]"
+                        />
+                        Для генерации
+                      </label>
+                    ) : null}
+                    <button type="button" onClick={() => removeFile(file)} aria-label={`Удалить ${file.name}`} className="flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-soft hover:text-ink"><Trash2 className="h-4 w-4" /></button>
+                  </div>
+                );
+              })}
             </div>
           ) : null}
         </section>
@@ -367,7 +418,7 @@ export function NewProjectWizard() {
 
       {showConfirmDialog ? (
         <GenerationConfirmDialog
-          fileCount={rasterFileCount}
+          fileCount={generationFiles.length}
           mode={mode}
           onModeChange={setMode}
           variantCount={variantCount}

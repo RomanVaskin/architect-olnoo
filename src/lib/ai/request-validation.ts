@@ -8,6 +8,26 @@ const MAX_IMAGES = 3;
 const MAX_TEXT_LENGTH = 4000;
 const GENERATION_MODES: GenerationMode[] = ["auto", "fast", "balanced", "maximum-quality"];
 
+/**
+ * Conservative cap on the combined raw (pre-base64) bytes of all images in a
+ * single generation request. Gemini's documented inline-request limit is
+ * ~20MB total for the whole request (prompt + files); base64 encoding
+ * inflates raw bytes by ~4/3, and the JSON request wrapper adds a little
+ * more. Staying well under 20MB after that expansion leaves headroom for the
+ * prompt text and multiple image parts instead of failing right at the edge.
+ *
+ * TODO: if requests routinely approach this limit, switch to the Gemini
+ * Files API (upload once, reference by URI) instead of sending images inline
+ * — not implemented yet, since MVP request sizes are far below it.
+ */
+export const MAX_TOTAL_INLINE_IMAGE_BYTES = 12 * 1024 * 1024;
+
+export function formatCombinedImageSizeError(totalBytes: number): string {
+  const totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
+  const limitMb = (MAX_TOTAL_INLINE_IMAGE_BYTES / (1024 * 1024)).toFixed(0);
+  return `Суммарный размер изображений (${totalMb} МБ) превышает лимит ${limitMb} МБ на одну генерацию. Уменьшите количество или размер файлов.`;
+}
+
 export interface ValidatedGenerationInput {
   images: SourceImageInput[];
   constraints: ArchitecturalConstraints;
@@ -46,6 +66,11 @@ export async function validateGenerationForm(formData: FormData): Promise<Valida
     if (file.size > MAX_FILE_SIZE) {
       throw new GenerationError("unsupported-file", `Файл «${file.name}» больше ${MAX_FILE_SIZE / (1024 * 1024)} МБ.`);
     }
+  }
+
+  const totalImageBytes = files.reduce((sum, file) => sum + file.size, 0);
+  if (totalImageBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
+    throw new GenerationError("validation", formatCombinedImageSizeError(totalImageBytes));
   }
 
   const goal = String(formData.get("goal") ?? "").trim();
