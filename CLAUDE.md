@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Architect OLNOO is an AI-assisted architectural design platform. It is currently in the documentation and planning phase — no application code exists yet.
+Architect OLNOO is an AI-assisted architectural design platform. Frontend implementation uses Next.js, TypeScript, Tailwind CSS, and the App Router.
 
 ## Repository Structure
 
@@ -12,7 +12,7 @@ Architect OLNOO is an AI-assisted architectural design platform. It is currently
 architect-olnoo/
 ├── docs/     # Architecture and product documentation (numbered 00-10)
 ├── specs/    # Detailed specs for individual features and AI agents
-└── src/      # Application source code (currently empty)
+└── src/      # Next.js application source code
 ```
 
 - `docs/README.md` — index of all documents in `docs/` with their purpose
@@ -22,7 +22,7 @@ architect-olnoo/
 
 - Every document in `docs/` and `specs/` starts with a title, `Version`, `Status`, `Last Updated`, and a one-line purpose summary.
 - Changes are logged in `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/).
-- No `package.json` or dependencies have been added yet — do not assume a specific language/framework until it is decided and documented in `docs/01-PLATFORM-ARCHITECTURE.md`.
+- Frontend changes must preserve the existing Next.js, TypeScript, and Tailwind CSS stack.
 
 ## Working in This Repo
 

@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #17211d;
+  --muted: #6f7772;
+  --line: #e4e8e5;
+  --paper: #f6f7f5;
+  --card: #ffffff;
+  --moss: #203f35;
+  --moss-soft: #e9f0ec;
+  --sand: #d7c8b4;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--paper); }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 83% -10%, rgba(202, 218, 208, .38), transparent 26rem),
+    var(--paper);
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, a { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+
+::selection { background: #cbdad2; color: #13251f; }
+
+.architect-canvas {
+  background-color: #e8e8e4;
+  background-image:
+    linear-gradient(rgba(36, 58, 49, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(36, 58, 49, .055) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.house-scene {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, #bcc8c2 0 55%, #808b78 55% 100%);
+}
+
+.house-scene::before {
+  content: "";
+  position: absolute;
+  left: 14%; right: 10%; bottom: 14%; height: 44%;
+  background: linear-gradient(90deg, #eee9df 0 68%, #c7b294 68%);
+  clip-path: polygon(0 20%, 35% 20%, 42% 0, 100% 0, 100% 100%, 0 100%);
+  box-shadow: 0 22px 40px rgba(31, 43, 37, .24);
+}
+
+.house-scene::after {
+  content: "";
+  position: absolute;
+  left: 24%; bottom: 24%; width: 38%; height: 23%;
+  background: repeating-linear-gradient(90deg, #23302c 0 18%, #abc0b9 18% 20%, #23302c 20% 38%);
+  box-shadow: 150px 5px 0 -20px #26332e;
+}
+
+.concept-dark::before { background: linear-gradient(90deg, #4d514b 0 68%, #b39d81 68%); }
+.concept-light::before { background: linear-gradient(90deg, #f1eee7 0 68%, #d0bb9d 68%); }
+.concept-wood::before { background: linear-gradient(90deg, #8f735a 0 68%, #353d39 68%); }
+
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { scrollbar-width: none; }
+
+@media (max-width: 1023px) {
+  .desktop-sidebar { display: none; }
+  .app-main { margin-left: 0 !important; }
+}

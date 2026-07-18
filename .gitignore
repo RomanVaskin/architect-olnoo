@@ -17,6 +17,7 @@ build/
 out/
 coverage/
 .eslintcache
+*.tsbuildinfo
 .next/
 .nuxt/
 .turbo/
