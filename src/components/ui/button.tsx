@@ -5,13 +5,13 @@ import { cn } from "@/lib/utils";
 type Variant = "primary" | "secondary" | "ghost";
 
 const variantClasses: Record<Variant, string> = {
-  primary: "bg-accent text-accent-ink hover:opacity-90",
+  primary: "bg-action text-action-ink hover:bg-action-hover",
   secondary: "border border-border bg-surface text-ink hover:bg-surface-soft",
   ghost: "text-ink-secondary hover:bg-surface-soft hover:text-ink",
 };
 
 const baseClasses =
-  "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;

@@ -11,7 +11,7 @@ type BadgeVariant = "neutral" | "accent" | "positive";
 
 const variantClasses: Record<BadgeVariant, string> = {
   neutral: "bg-surface-soft text-ink-secondary",
-  accent: "bg-accent/10 text-accent",
+  accent: "bg-accent/10 text-action",
   positive: "bg-positive/10 text-positive",
 };
 

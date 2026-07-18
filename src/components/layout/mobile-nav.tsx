@@ -46,7 +46,7 @@ export function MobileNav() {
             <Link
               href="/projects/new"
               onClick={() => setOpen(false)}
-              className="mt-4 inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-ink"
+              className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-medium text-action-ink hover:bg-action-hover"
             >
               <Plus className="h-4 w-4" />
               Новый проект

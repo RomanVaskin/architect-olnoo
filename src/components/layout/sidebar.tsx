@@ -27,10 +27,10 @@ export function Sidebar() {
   return (
     <aside className="hidden w-[280px] shrink-0 flex-col border-r border-border bg-surface px-4 py-5 md:flex">
       <Link href="/" className="flex items-center px-2 py-2">
-        <Image src="/olnoo-logo.svg" alt="Architect OLNOO" width={100} height={42} priority className="h-auto w-[100px]" />
+        <Image src="/olnoo-logo.svg" alt="Architect OLNOO" width={100} height={43} priority className="h-auto w-[100px]" />
       </Link>
 
-      <div className="mt-6 flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-2 text-sm text-ink-secondary">
+      <div className="mt-6 flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm text-ink-secondary">
         <Search className="h-4 w-4 shrink-0" />
         <span className="truncate">Поиск проектов…</span>
         <kbd className="ml-auto rounded border border-border px-1.5 py-0.5 text-[11px] text-ink-secondary">⌘K</kbd>
@@ -38,7 +38,7 @@ export function Sidebar() {
 
       <Link
         href="/projects/new"
-        className="mt-4 inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-ink hover:opacity-90"
+        className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-medium text-action-ink hover:bg-action-hover"
       >
         <Plus className="h-4 w-4" />
         Новый проект

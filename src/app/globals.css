@@ -9,7 +9,13 @@
   --color-border: #e7e3df;
   --color-accent: #f24b2e;
   --color-accent-ink: #ffffff;
+  --color-accent-soft: #fffaf8;
+  --color-action: #d63f26;
+  --color-action-hover: #c9341f;
+  --color-action-ink: #ffffff;
   --color-positive: #3f9b64;
+  --color-positive-soft: #f5faf6;
+  --color-positive-border: #dceadd;
 }
 
 @theme inline {
@@ -21,7 +27,13 @@
   --color-border: var(--color-border);
   --color-accent: var(--color-accent);
   --color-accent-ink: var(--color-accent-ink);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-action: var(--color-action);
+  --color-action-hover: var(--color-action-hover);
+  --color-action-ink: var(--color-action-ink);
   --color-positive: var(--color-positive);
+  --color-positive-soft: var(--color-positive-soft);
+  --color-positive-border: var(--color-positive-border);
   --font-sans: var(--font-inter);
 }
 

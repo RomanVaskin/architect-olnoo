@@ -39,7 +39,7 @@ export default async function AiDialoguePage({ params }: { params: Promise<{ pro
           </div>
         ))}
       </Card>
-      <div className="rounded-full border border-border px-4 py-2 text-sm text-ink-secondary opacity-50">
+      <div className="rounded-xl border border-border px-4 py-2 text-sm text-ink-secondary opacity-50">
         Полноценный диалог с AI Architect появится на следующем этапе (см. AI Conversation Panel в 01-PRODUCT.md)…
       </div>
     </div>

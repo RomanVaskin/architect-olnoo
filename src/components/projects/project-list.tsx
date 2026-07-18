@@ -33,7 +33,7 @@ export function ProjectList({ projects }: { projects: Project[] }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="flex flex-1 items-center gap-2 rounded-full border border-border px-4 py-2 text-sm">
+        <div className="flex flex-1 items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm">
           <Search className="h-4 w-4 text-ink-secondary" />
           <input
             value={query}
@@ -45,7 +45,7 @@ export function ProjectList({ projects }: { projects: Project[] }) {
         <select
           value={stateFilter}
           onChange={(event) => setStateFilter(event.target.value as ProjectState | "all")}
-          className="rounded-full border border-border bg-surface px-4 py-2 text-sm text-ink outline-none"
+          className="rounded-xl border border-border bg-surface px-4 py-2 text-sm text-ink outline-none"
         >
           {STATE_FILTERS.map((option) => (
             <option key={option.value} value={option.value}>

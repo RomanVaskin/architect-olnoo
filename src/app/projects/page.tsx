@@ -13,7 +13,7 @@ export default function ProjectsPage() {
         action={
           <Link
             href="/projects/new"
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-ink hover:opacity-90"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-medium text-action-ink hover:bg-action-hover"
           >
             <Plus className="h-4 w-4" />
             Создать проект

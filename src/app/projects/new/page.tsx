@@ -17,17 +17,17 @@ export default function NewProjectPage() {
         title="Что будем проектировать?"
         description="Выберите отправную точку. Architect OLNOO адаптирует бриф и рабочий процесс под вашу задачу."
       />
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Новый проект · шаг 1 из 4</p>
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-action">Новый проект · шаг 1 из 4</p>
       <div className="grid gap-4 sm:grid-cols-2">
         {projectTypes.map(({ icon: Icon, title, description }, index) => (
-          <button key={title} type="button" className={`rounded-2xl border p-5 text-left transition-colors hover:border-accent/50 ${index === 0 ? "border-accent/60 bg-[#fffaf8]" : "border-border bg-surface"}`}>
+          <button key={title} type="button" className={`rounded-2xl border p-5 text-left transition-colors hover:border-accent/50 ${index === 0 ? "border-accent/60 bg-accent-soft" : "border-border bg-surface"}`}>
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-soft text-ink-secondary"><Icon className="h-5 w-5" strokeWidth={1.5} /></span>
             <span className="mt-5 block font-medium text-ink">{title}</span>
             <span className="mt-2 block text-sm leading-5 text-ink-secondary">{description}</span>
           </button>
         ))}
       </div>
-      <div className="flex justify-end"><Link href="/projects/dom-na-valdae" className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-white">Продолжить <ArrowRight className="h-4 w-4" /></Link></div>
+      <div className="flex justify-end"><Link href="/projects/dom-na-valdae" className="inline-flex items-center gap-2 rounded-xl bg-action px-5 py-2.5 text-sm font-medium text-action-ink hover:bg-action-hover">Продолжить <ArrowRight className="h-4 w-4" /></Link></div>
     </div>
   );
 }
