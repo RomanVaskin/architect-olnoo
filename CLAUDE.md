@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Architect OLNOO is an AI-assisted architectural design platform. It is currently in the documentation and planning phase — no application code exists yet.
 
+## Non-negotiable design direction
+
+- Read `docs/10-DESIGN-SYSTEM.md` before creating or changing any interface.
+- Use `docs/references/life-olnoo-dashboard.png` as the primary visual reference.
+- Use the official cropped wordmark at `public/olnoo-logo.svg` without redrawing it.
+- Do not use any code, components, styles, screenshots, or layout decisions from the discarded v0 generation.
+- Keep the interface white, calm, minimal, and consistent with the wider OLNOO product family.
+- Do not modify the Supabase schema unless the user explicitly approves a reviewed migration.
+- The configured Supabase MCP connection is intentionally read-only during the design stage.
+
 ## Repository Structure
 
 ```
@@ -22,7 +32,7 @@ architect-olnoo/
 
 - Every document in `docs/` and `specs/` starts with a title, `Version`, `Status`, `Last Updated`, and a one-line purpose summary.
 - Changes are logged in `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/).
-- No `package.json` or dependencies have been added yet — do not assume a specific language/framework until it is decided and documented in `docs/01-PLATFORM-ARCHITECTURE.md`.
+- No `package.json` or dependencies have been added yet — do not assume a specific language/framework until it is decided and documented in `docs/02-PLATFORM-ARCHITECTURE.md`.
 
 ## Working in This Repo
 

@@ -20,16 +20,15 @@ architect-olnoo/
 Вся документация проекта находится в [`docs/`](docs/README.md):
 
 - [00-VISION.md](docs/00-VISION.md) — видение продукта
-- [01-PLATFORM-ARCHITECTURE.md](docs/01-PLATFORM-ARCHITECTURE.md) — архитектура платформы
-- [02-PRODUCT-SPECIFICATION.md](docs/02-PRODUCT-SPECIFICATION.md) — продуктовая спецификация
+- [01-PRODUCT.md](docs/01-PRODUCT.md) — философия продукта, спецификация, роли, сценарии, модули, MVP, дорожная карта
+- [02-PLATFORM-ARCHITECTURE.md](docs/02-PLATFORM-ARCHITECTURE.md) — архитектура платформы
 - [03-DATABASE.md](docs/03-DATABASE.md) — база данных
 - [04-AI-PIPELINE.md](docs/04-AI-PIPELINE.md) — AI-конвейер
 - [05-FRONTEND.md](docs/05-FRONTEND.md) — фронтенд
 - [06-BACKEND.md](docs/06-BACKEND.md) — бэкенд
 - [07-API.md](docs/07-API.md) — API
 - [08-SECURITY.md](docs/08-SECURITY.md) — безопасность
-- [09-ROADMAP.md](docs/09-ROADMAP.md) — дорожная карта
-- [10-TODO.md](docs/10-TODO.md) — текущие задачи
+- [09-TODO.md](docs/09-TODO.md) — текущие задачи
 
 Детальные спецификации отдельных фич и агентов — в [`specs/`](specs/README.md).
 
