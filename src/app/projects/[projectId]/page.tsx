@@ -3,6 +3,7 @@ import { CheckCircle2, Circle } from "lucide-react";
 import { getProjectById } from "@/lib/mock-data";
 import { Card } from "@/components/ui/card";
 import { ActivityFeed } from "@/components/workspace/activity-feed";
+import { ProjectThumbnail } from "@/components/projects/project-thumbnail";
 import { PROJECT_LIFECYCLE_LABELS } from "@/lib/types";
 
 export default async function ProjectOverviewPage({
@@ -23,6 +24,14 @@ export default async function ProjectOverviewPage({
 
   return (
     <div className="flex flex-col gap-8">
+      <Card className="overflow-hidden">
+        <ProjectThumbnail seed={project.id} className="h-[260px] w-full sm:h-[340px]" />
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
+          <div><p className="text-sm font-medium text-ink">Основной вид проекта</p><p className="mt-1 text-xs text-ink-secondary">Геометрия зафиксирована · климатические ограничения учтены</p></div>
+          <div className="flex gap-2"><span className="rounded-full bg-surface-soft px-3 py-1 text-xs text-ink-secondary">Геометрия сохранена</span><span className="rounded-full bg-surface-soft px-3 py-1 text-xs text-ink-secondary">Холодный климат</span></div>
+        </div>
+      </Card>
+
       <Card className="p-5">
         <h2 className="text-sm font-medium text-ink-secondary">Текущая стадия</h2>
         <p className="mt-1 text-lg font-semibold text-ink">{PROJECT_LIFECYCLE_LABELS[project.lifecycleStage]}</p>

@@ -28,4 +28,69 @@
 body {
   background: var(--color-surface);
   color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: #ffd8cf;
+  color: var(--color-ink);
+}
+
+.architect-scene {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, #d9dfdd 0 58%, #aeb6aa 58% 100%);
+}
+
+.architect-scene::before {
+  content: "";
+  position: absolute;
+  right: 9%;
+  bottom: 14%;
+  left: 12%;
+  height: 48%;
+  background: linear-gradient(90deg, #f1eee7 0 70%, #cab89d 70%);
+  clip-path: polygon(0 24%, 37% 24%, 45% 0, 100% 0, 100% 100%, 0 100%);
+  box-shadow: 0 18px 36px rgb(23 23 21 / 16%);
+}
+
+.architect-scene::after {
+  content: "";
+  position: absolute;
+  bottom: 25%;
+  left: 23%;
+  width: 42%;
+  height: 23%;
+  background: repeating-linear-gradient(90deg, #313b37 0 20%, #b6c3be 20% 22%, #313b37 22% 42%);
+  box-shadow: 130px 4px 0 -18px #313a36;
+}
+
+.architect-scene--graphite::before {
+  background: linear-gradient(90deg, #555854 0 70%, #b09b80 70%);
+}
+
+.architect-scene--wood::before {
+  background: linear-gradient(90deg, #9b7b60 0 70%, #3e4642 70%);
+}
+
+.architect-scene--sand::before {
+  background: linear-gradient(90deg, #ded4c5 0 70%, #9c8068 70%);
+}
+
+.architect-grid {
+  background-color: #f6f5f3;
+  background-image: linear-gradient(rgb(94 89 84 / 5%) 1px, transparent 1px), linear-gradient(90deg, rgb(94 89 84 / 5%) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
