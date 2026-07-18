@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, ShieldAlert } from "lucide-react";
+import { ArrowLeft, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ProjectStateBadge } from "@/components/ui/badge";
@@ -41,8 +41,6 @@ interface ConceptDetailProps {
 }
 
 export function ConceptDetail({ concept, isSelected, feedback, onAddFeedback, onSelect, onBack }: ConceptDetailProps) {
-  const needsSpecialistReview = concept.state === "needs-specialist-review";
-
   return (
     <div className="flex flex-col gap-6">
       <Button type="button" variant="secondary" size="sm" className="self-start" onClick={onBack}>
@@ -87,22 +85,20 @@ export function ConceptDetail({ concept, isSelected, feedback, onAddFeedback, on
 
       <Card className="p-5">
         <h3 className="text-sm font-medium text-ink-secondary">Сохранённые ограничения</h3>
+        <p className="mt-1 text-xs text-ink-secondary">
+          Автоматическая проверка геометрии пока не подключена — все ограничения требуют проверки специалиста.
+        </p>
         <div className="mt-3 flex flex-col divide-y divide-border">
           {PRESERVED_CONSTRAINTS.map((constraint) => (
             <div key={constraint.key} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
-              {needsSpecialistReview ? (
-                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-action" strokeWidth={1.5} />
-              ) : (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-positive" strokeWidth={1.5} />
-              )}
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-action" strokeWidth={1.5} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-ink">{constraint.label}</p>
-                  <span className={needsSpecialistReview ? "text-xs font-medium text-action" : "text-xs font-medium text-positive"}>
-                    {needsSpecialistReview ? "Требует проверки специалиста" : "Проверено"}
-                  </span>
+                  <span className="text-xs font-medium text-action">Требует проверки специалиста</span>
                 </div>
                 <p className="mt-1 text-sm text-ink-secondary">{constraint.description}</p>
+                <p className="mt-1 text-xs text-ink-secondary">Автоматическая проверка пока не выполнена</p>
               </div>
             </div>
           ))}
