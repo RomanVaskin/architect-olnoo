@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GENERATION_MODE_LABELS, type GenerationMode } from "@/lib/types";
@@ -49,6 +50,11 @@ interface GenerationConfirmDialogProps {
   isRetryingSave: boolean;
   recoveryConcepts: RecoveryConcept[];
   onRetrySave: () => void;
+  attemptId: string | null;
+  draftProjectId: string | null;
+  ambiguousFailure: boolean;
+  acknowledgedAmbiguous: boolean;
+  onAcknowledgeAmbiguousChange: (acknowledged: boolean) => void;
 }
 
 export function GenerationConfirmDialog({
@@ -66,8 +72,14 @@ export function GenerationConfirmDialog({
   isRetryingSave,
   recoveryConcepts,
   onRetrySave,
+  attemptId,
+  draftProjectId,
+  ambiguousFailure,
+  acknowledgedAmbiguous,
+  onAcknowledgeAmbiguousChange,
 }: GenerationConfirmDialogProps) {
   const controlsDisabled = isGenerating || persistenceFailed;
+  const confirmBlockedByAmbiguity = ambiguousFailure && !acknowledgedAmbiguous;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" role="dialog" aria-modal="true" aria-labelledby="generation-dialog-title">
@@ -137,6 +149,35 @@ export function GenerationConfirmDialog({
           </p>
         ) : null}
 
+        {draftProjectId && !isGenerating && (error || persistenceFailed) ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface-soft px-4 py-3">
+            <p className="text-xs text-ink-secondary">
+              Черновик проекта сохранён{attemptId ? ` · ID попытки генерации: ${attemptId}` : ""}. Доступ к нему не теряется.
+            </p>
+            <Link
+              href={`/projects/${draftProjectId}`}
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-surface-soft"
+            >
+              Открыть сохранённый черновик
+            </Link>
+          </div>
+        ) : null}
+
+        {ambiguousFailure ? (
+          <label className="mt-3 flex items-start gap-3 rounded-xl border border-border bg-surface-soft p-4 text-sm text-ink-secondary">
+            <input
+              type="checkbox"
+              checked={acknowledgedAmbiguous}
+              onChange={(event) => onAcknowledgeAmbiguousChange(event.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-action)]"
+            />
+            <span>
+              Я проверил(а) статус этой попытки и подтверждаю запуск новой платной генерации, даже если предыдущий запрос уже был
+              принят провайдером.
+            </span>
+          </label>
+        ) : null}
+
         {persistenceFailed ? (
           <div className="mt-4 rounded-xl border border-border bg-surface-soft p-4">
             <p className="text-sm font-medium text-action">Оплаченная генерация завершена — не запускайте её повторно</p>
@@ -174,7 +215,7 @@ export function GenerationConfirmDialog({
               <Button type="button" variant="ghost" onClick={onClose}>
                 Отмена
               </Button>
-              <Button type="button" onClick={onConfirm}>
+              <Button type="button" onClick={onConfirm} disabled={confirmBlockedByAmbiguity}>
                 Начать генерацию
               </Button>
             </>

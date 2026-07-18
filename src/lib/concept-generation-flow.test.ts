@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { requestAndDecodeConcepts, GenerationFlowError, type RequestAndDecodeDeps } from "./concept-generation-flow";
+import {
+  requestAndDecodeConcepts,
+  reuseOrCreateDraft,
+  extractRecoveryState,
+  GenerationFlowError,
+  type RequestAndDecodeDeps,
+} from "./concept-generation-flow";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -123,4 +129,139 @@ test("an AbortError from the request is propagated as-is (not wrapped) so the ca
     () => requestAndDecodeConcepts(deps, new AbortController().signal),
     (error: unknown) => error instanceof DOMException && error.name === "AbortError",
   );
+});
+
+test("a rejected fetch (network failure) never claims the paid request was definitely unsent, and is marked ambiguous", async () => {
+  const deps: RequestAndDecodeDeps = {
+    generateAttemptId: () => "attempt-net",
+    persistDraft: async () => "project-1",
+    persistAttempt: async () => {},
+    requestGeneration: async () => {
+      throw new TypeError("Failed to fetch");
+    },
+  };
+
+  await assert.rejects(
+    () => requestAndDecodeConcepts(deps, new AbortController().signal),
+    (error: unknown) => {
+      assert.ok(error instanceof GenerationFlowError);
+      assert.equal(error.ambiguous, true);
+      assert.equal(error.attemptId, "attempt-net");
+      assert.equal(error.projectId, "project-1");
+      // Must not assert the request was unsent — a client-side network
+      // failure does not prove the server/provider never received it.
+      assert.equal(/не был отправлен/i.test(error.message), false);
+      assert.equal(/не отправлен/i.test(error.message), false);
+      assert.equal(/not sent/i.test(error.message), false);
+      return true;
+    },
+  );
+});
+
+test("persist-draft and persist-attempt failures are NOT marked ambiguous — the request genuinely never went out", async () => {
+  const draftFailure: RequestAndDecodeDeps = {
+    persistDraft: async () => {
+      throw new Error("indexeddb unavailable");
+    },
+    persistAttempt: async () => {},
+    requestGeneration: async () => jsonResponse({ variants: [] }),
+  };
+
+  await assert.rejects(
+    () => requestAndDecodeConcepts(draftFailure, new AbortController().signal),
+    (error: unknown) => {
+      assert.ok(error instanceof GenerationFlowError);
+      assert.equal(error.ambiguous, false);
+      return true;
+    },
+  );
+});
+
+test("extractRecoveryState pulls attemptId, projectId, ambiguous and message off a GenerationFlowError — this is what the wizard uses to keep its recovery state in sync", async () => {
+  const deps: RequestAndDecodeDeps = {
+    generateAttemptId: () => "attempt-recover",
+    persistDraft: async () => "project-recover",
+    persistAttempt: async () => {},
+    requestGeneration: async () => {
+      throw new TypeError("Failed to fetch");
+    },
+  };
+
+  try {
+    await requestAndDecodeConcepts(deps, new AbortController().signal);
+    assert.fail("expected requestAndDecodeConcepts to throw");
+  } catch (error) {
+    const recovery = extractRecoveryState(error);
+    assert.deepEqual(recovery, {
+      attemptId: "attempt-recover",
+      projectId: "project-recover",
+      ambiguous: true,
+      message: (error as GenerationFlowError).message,
+    });
+  }
+});
+
+test("extractRecoveryState returns null for errors that aren't a GenerationFlowError (e.g. AbortError) — nothing to recover", () => {
+  assert.equal(extractRecoveryState(new DOMException("aborted", "AbortError")), null);
+  assert.equal(extractRecoveryState(new Error("plain error")), null);
+});
+
+test("reuseOrCreateDraft reuses an existing draft id and never calls createDraft again", async () => {
+  let createCalls = 0;
+  const createDraft = async () => {
+    createCalls += 1;
+    return `project-${createCalls}`;
+  };
+
+  const first = await reuseOrCreateDraft(null, createDraft);
+  assert.equal(first, "project-1");
+  assert.equal(createCalls, 1);
+
+  const second = await reuseOrCreateDraft(first, createDraft);
+  assert.equal(second, "project-1");
+  assert.equal(createCalls, 1, "must not create a second draft once one already exists");
+});
+
+test("retrying a failed generation attempt reuses the same draft project instead of creating a duplicate", async () => {
+  let createCalls = 0;
+  let existingProjectId: string | null = null;
+  const persistDraft = () =>
+    reuseOrCreateDraft(existingProjectId, async () => {
+      createCalls += 1;
+      return "project-1";
+    });
+
+  // First attempt: an ambiguous network failure after the draft was created.
+  await assert.rejects(() =>
+    requestAndDecodeConcepts(
+      {
+        generateAttemptId: () => "attempt-1",
+        persistDraft,
+        persistAttempt: async () => {},
+        requestGeneration: async () => {
+          throw new TypeError("Failed to fetch");
+        },
+      },
+      new AbortController().signal,
+    ),
+  );
+  assert.equal(createCalls, 1);
+
+  // The wizard would have stored the project id from the caught error's recovery state here.
+  existingProjectId = "project-1";
+
+  // Retry (e.g. after the user acknowledges the ambiguous failure): must reuse the same draft.
+  const result = await requestAndDecodeConcepts(
+    {
+      generateAttemptId: () => "attempt-2",
+      persistDraft,
+      persistAttempt: async () => {},
+      requestGeneration: async () =>
+        jsonResponse({ variants: [{ status: "succeeded", mode: "auto", mimeType: "image/png", imageBase64: b64("ok"), warnings: [] }] }),
+    },
+    new AbortController().signal,
+  );
+
+  assert.equal(result.projectId, "project-1");
+  assert.equal(createCalls, 1, "createDraft must only run once across both attempts");
 });

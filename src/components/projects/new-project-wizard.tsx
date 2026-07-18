@@ -25,7 +25,7 @@ import {
 } from "@/lib/mvp-local-project-store";
 import { GenerationConfirmDialog } from "@/components/projects/generation-confirm-dialog";
 import { MAX_TOTAL_INLINE_IMAGE_BYTES, formatCombinedImageSizeError } from "@/lib/ai/request-validation";
-import { requestAndDecodeConcepts, GenerationFlowError } from "@/lib/concept-generation-flow";
+import { requestAndDecodeConcepts, reuseOrCreateDraft, extractRecoveryState, GenerationFlowError } from "@/lib/concept-generation-flow";
 import { persistConceptsIndividually, type PersistableConcept } from "@/lib/concept-persistence";
 import { logGenerationDiagnostic } from "@/lib/generation-diagnostics";
 import {
@@ -112,6 +112,8 @@ export function NewProjectWizard() {
   const [persistedKeys, setPersistedKeys] = useState<string[]>([]);
   const [persistenceFailed, setPersistenceFailed] = useState(false);
   const [isRetryingSave, setIsRetryingSave] = useState(false);
+  const [ambiguousFailure, setAmbiguousFailure] = useState(false);
+  const [acknowledgedAmbiguous, setAcknowledgedAmbiguous] = useState(false);
 
   const rasterFiles = useMemo(() => files.filter(isRasterImage), [files]);
   const generationFiles = useMemo(
@@ -217,6 +219,7 @@ export function NewProjectWizard() {
 
   async function confirmAndGenerate() {
     if (isGenerating || persistenceFailed) return; // guard against duplicate submissions and re-billing after a lost save
+    if (ambiguousFailure && !acknowledgedAmbiguous) return; // an unresolved ambiguous network failure must be acknowledged first
     if (generationBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
       setGenerationError(formatCombinedImageSizeError(generationBytes));
       return;
@@ -225,11 +228,15 @@ export function NewProjectWizard() {
     setGenerationError(null);
     setPendingConcepts([]);
     setPersistedKeys([]);
+    setAmbiguousFailure(false);
+    setAcknowledgedAmbiguous(false);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
     let currentAttemptId: string | null = null;
 
+    // Reused verbatim if a draft project already exists for this wizard session (see persistDraft below) —
+    // only used to create a brand new draft on the very first attempt.
     const draftInput: DraftProjectInput = {
       name: projectName.trim(),
       buildingType: "Частный дом",
@@ -253,7 +260,8 @@ export function NewProjectWizard() {
     try {
       const result = await requestAndDecodeConcepts(
         {
-          persistDraft: () => createDraftProject(draftInput),
+          // Reuse the draft created by an earlier attempt in this session instead of creating a new one on every retry.
+          persistDraft: () => reuseOrCreateDraft(draftProjectId, () => createDraftProject(draftInput)),
           persistAttempt: (projectId, attempt) => createGenerationAttempt(projectId, attempt),
           requestGeneration: (signal) => {
             const formData = new FormData();
@@ -291,7 +299,12 @@ export function NewProjectWizard() {
         );
       } else if (error instanceof GenerationFlowError) {
         // requestAndDecodeConcepts already logged a safe diagnostic for this stage.
-        setGenerationError(error.message);
+        // Keep the draft reachable — it exists whenever the error carries a projectId.
+        const recovery = extractRecoveryState(error);
+        if (recovery?.attemptId) setAttemptId(recovery.attemptId);
+        if (recovery?.projectId) setDraftProjectId(recovery.projectId);
+        setAmbiguousFailure(recovery?.ambiguous ?? false);
+        setGenerationError(recovery?.message ?? error.message);
       } else {
         logGenerationDiagnostic(currentAttemptId ?? "unknown", "unknown", error);
         setGenerationError(
@@ -488,6 +501,11 @@ export function NewProjectWizard() {
           isRetryingSave={isRetryingSave}
           recoveryConcepts={pendingConcepts}
           onRetrySave={retrySave}
+          attemptId={attemptId}
+          draftProjectId={draftProjectId}
+          ambiguousFailure={ambiguousFailure}
+          acknowledgedAmbiguous={acknowledgedAmbiguous}
+          onAcknowledgeAmbiguousChange={setAcknowledgedAmbiguous}
         />
       ) : null}
     </div>

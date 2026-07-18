@@ -24,12 +24,25 @@ export class GenerationFlowError extends Error {
   readonly stage: GenerationStage;
   readonly attemptId?: string;
   readonly projectId?: string;
+  /**
+   * True when whether the paid request reached the provider is genuinely
+   * unknown (e.g. the browser's fetch rejected before any HTTP response
+   * came back). Callers must not assume "not sent" in this case, and should
+   * require explicit user acknowledgement before starting another paid
+   * attempt — see docs on the ambiguous-failure UI in the wizard.
+   */
+  readonly ambiguous: boolean;
 
-  constructor(stage: GenerationStage, message: string, meta?: { attemptId?: string; projectId?: string }) {
+  constructor(
+    stage: GenerationStage,
+    message: string,
+    meta?: { attemptId?: string; projectId?: string; ambiguous?: boolean },
+  ) {
     super(message);
     this.stage = stage;
     this.attemptId = meta?.attemptId;
     this.projectId = meta?.projectId;
+    this.ambiguous = meta?.ambiguous ?? false;
   }
 }
 
@@ -51,6 +64,38 @@ export interface RequestAndDecodeResult {
 
 function defaultAttemptId(): string {
   return `attempt-${crypto.randomUUID()}`;
+}
+
+/**
+ * Reuses a draft project already created earlier in the same wizard session
+ * instead of creating another one on every retry. `createDraft` only runs
+ * when no project exists yet.
+ */
+export async function reuseOrCreateDraft(existingProjectId: string | null, createDraft: () => Promise<string>): Promise<string> {
+  if (existingProjectId) return existingProjectId;
+  return createDraft();
+}
+
+export interface GenerationErrorRecovery {
+  attemptId: string | null;
+  projectId: string | null;
+  ambiguous: boolean;
+  message: string;
+}
+
+/**
+ * Pulls the wizard-recoverable state out of a caught error so a caller
+ * never loses track of an already-created draft or attempt id — returns
+ * null for anything that isn't a GenerationFlowError (nothing to recover).
+ */
+export function extractRecoveryState(error: unknown): GenerationErrorRecovery | null {
+  if (!(error instanceof GenerationFlowError)) return null;
+  return {
+    attemptId: error.attemptId ?? null,
+    projectId: error.projectId ?? null,
+    ambiguous: error.ambiguous,
+    message: error.message,
+  };
 }
 
 /**
@@ -98,8 +143,8 @@ export async function requestAndDecodeConcepts(
     report("request", error);
     throw new GenerationFlowError(
       "request",
-      "Не удалось отправить запрос на сервер генерации. Платный запрос к AI-провайдеру не был отправлен, подключение к интернету можно проверить и запустить генерацию снова.",
-      { attemptId, projectId },
+      `Браузер не получил ответ от сервера генерации (попытка ${attemptId}). Это не значит, что платный запрос не дошёл до AI-провайдера — по одному сетевому сбою на клиенте это определить нельзя. Прежде чем запускать новую генерацию, проверьте статус этой попытки (например, по сохранённому черновику проекта) и подтвердите, что предыдущий запрос точно не был принят.`,
+      { attemptId, projectId, ambiguous: true },
     );
   }
 
