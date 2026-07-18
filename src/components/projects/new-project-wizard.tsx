@@ -17,9 +17,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { GenerationMode } from "@/lib/types";
-import { createDraftProject, saveGeneratedConcepts } from "@/lib/mvp-local-project-store";
+import {
+  createDraftProject,
+  createGenerationAttempt,
+  saveGeneratedConcept,
+  type DraftProjectInput,
+} from "@/lib/mvp-local-project-store";
 import { GenerationConfirmDialog } from "@/components/projects/generation-confirm-dialog";
 import { MAX_TOTAL_INLINE_IMAGE_BYTES, formatCombinedImageSizeError } from "@/lib/ai/request-validation";
+import { requestAndDecodeConcepts, GenerationFlowError } from "@/lib/concept-generation-flow";
+import { persistConceptsIndividually, type PersistableConcept } from "@/lib/concept-persistence";
+import { logGenerationDiagnostic } from "@/lib/generation-diagnostics";
 import {
   MAX_GENERATION_IMAGES,
   fileKey,
@@ -68,15 +76,6 @@ const steps = ["Тип проекта", "Материалы", "Пожелани�
 const DEFAULT_MUST_KEEP = ["Геометрия и основные пропорции", "Форма и уклон крыши", "Положение окон и дверей"];
 const DEFAULT_MAY_CHANGE = ["Материалы фасада", "Цветовая палитра", "Наружное освещение"];
 
-interface GenerateVariantResponse {
-  status: "succeeded" | "failed";
-  mode: string;
-  mimeType?: string;
-  imageBase64?: string;
-  warnings: string[];
-  error?: { code: string; message: string };
-}
-
 function formatFileSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} КБ`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
@@ -106,6 +105,13 @@ export function NewProjectWizard() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generationKeys, setGenerationKeys] = useState<string[]>([]);
+
+  const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
+  const [pendingConcepts, setPendingConcepts] = useState<PersistableConcept[]>([]);
+  const [persistedKeys, setPersistedKeys] = useState<string[]>([]);
+  const [persistenceFailed, setPersistenceFailed] = useState(false);
+  const [isRetryingSave, setIsRetryingSave] = useState(false);
 
   const rasterFiles = useMemo(() => files.filter(isRasterImage), [files]);
   const generationFiles = useMemo(
@@ -188,98 +194,148 @@ export function NewProjectWizard() {
     abortControllerRef.current?.abort();
   }
 
+  /** Persists successful variants one at a time; on partial failure, keeps them in state for recovery instead of navigating away. */
+  async function persistAndProceed(attempt: string, projectId: string, concepts: PersistableConcept[], partial: boolean) {
+    const result = await persistConceptsIndividually(
+      { persistConcept: saveGeneratedConcept, onDiagnostic: logGenerationDiagnostic },
+      attempt,
+      projectId,
+      concepts,
+    );
+    setPersistedKeys(result.persistedKeys);
+
+    if (result.failedKeys.length > 0) {
+      setPersistenceFailed(true);
+      setGenerationError(
+        "Платная генерация завершена и изображения получены, но сохранить часть концепций в этом браузере не удалось. Не запускайте генерацию заново — скачайте изображения ниже и повторите сохранение, когда будете готовы.",
+      );
+      return;
+    }
+
+    router.push(`/projects/${projectId}/concepts?generated=1${partial ? "&partial=1" : ""}`);
+  }
+
   async function confirmAndGenerate() {
-    if (isGenerating) return; // guard against duplicate submissions
+    if (isGenerating || persistenceFailed) return; // guard against duplicate submissions and re-billing after a lost save
     if (generationBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
       setGenerationError(formatCombinedImageSizeError(generationBytes));
       return;
     }
     setIsGenerating(true);
     setGenerationError(null);
+    setPendingConcepts([]);
+    setPersistedKeys([]);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    let currentAttemptId: string | null = null;
+
+    const draftInput: DraftProjectInput = {
+      name: projectName.trim(),
+      buildingType: "Частный дом",
+      site: {
+        address: location.trim() || "Не указано",
+        climateZone: "Не указано",
+        areaSqm: 0,
+      },
+      brief: {
+        goal: goal.trim(),
+        mustKeep,
+        mayChange,
+        wantsChanged: explicitChanges.trim() ? [explicitChanges.trim()] : [],
+      },
+      sourceFiles: files.map((file) => ({
+        name: file.name,
+        kind: file.type === "application/pdf" ? "document" : "photo",
+      })),
+    };
 
     try {
-      const formData = new FormData();
-      generationFiles.forEach((file) => formData.append("images", file));
-      formData.append("goal", goal);
-      formData.append("explicitChanges", explicitChanges);
-      formData.append("mustKeep", JSON.stringify(mustKeep));
-      formData.append("mayChange", JSON.stringify(mayChange));
-      formData.append("mode", mode);
-      formData.append("variantCount", String(variantCount));
-
-      const response = await fetch("/api/concepts/generate", {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
-      });
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        setGenerationError(payload?.error?.message ?? "Не удалось сгенерировать концепции. Попробуйте ещё раз.");
-        return;
-      }
-
-      const variants = (payload.variants ?? []) as GenerateVariantResponse[];
-      const succeeded = variants.filter((variant) => variant.status === "succeeded" && variant.imageBase64);
-
-      if (succeeded.length === 0) {
-        const firstError = variants.find((variant) => variant.error)?.error?.message;
-        setGenerationError(firstError ?? "Не удалось сгенерировать ни одной концепции. Попробуйте ещё раз.");
-        return;
-      }
-
-      const generatedConcepts = await Promise.all(
-        succeeded.map(async (variant, index) => {
-          const blob = await (await fetch(`data:${variant.mimeType};base64,${variant.imageBase64}`)).blob();
-          return {
-            label: `Концепция ${CONCEPT_LABELS[index] ?? index + 1}`,
-            summary: goal.trim(),
-            changeExplanation: explicitChanges.trim() || goal.trim(),
-            blob,
-            mimeType: variant.mimeType ?? "image/png",
-            mode: variant.mode as GenerationMode,
-            warnings: variant.warnings,
-          };
-        }),
+      const result = await requestAndDecodeConcepts(
+        {
+          persistDraft: () => createDraftProject(draftInput),
+          persistAttempt: (projectId, attempt) => createGenerationAttempt(projectId, attempt),
+          requestGeneration: (signal) => {
+            const formData = new FormData();
+            generationFiles.forEach((file) => formData.append("images", file));
+            formData.append("goal", goal);
+            formData.append("explicitChanges", explicitChanges);
+            formData.append("mustKeep", JSON.stringify(mustKeep));
+            formData.append("mayChange", JSON.stringify(mayChange));
+            formData.append("mode", mode);
+            formData.append("variantCount", String(variantCount));
+            return fetch("/api/concepts/generate", { method: "POST", body: formData, signal });
+          },
+          onDiagnostic: logGenerationDiagnostic,
+        },
+        controller.signal,
       );
 
-      const projectId = await createDraftProject({
-        name: projectName.trim(),
-        buildingType: "Частный дом",
-        site: {
-          address: location.trim() || "Не указано",
-          climateZone: "Не указано",
-          areaSqm: 0,
-        },
-        brief: {
-          goal: goal.trim(),
-          mustKeep,
-          mayChange,
-          wantsChanged: explicitChanges.trim() ? [explicitChanges.trim()] : [],
-        },
-        sourceFiles: files.map((file) => ({
-          name: file.name,
-          kind: file.type === "application/pdf" ? "document" : "photo",
-        })),
-      });
+      currentAttemptId = result.attemptId;
+      setAttemptId(result.attemptId);
+      setDraftProjectId(result.projectId);
 
-      await saveGeneratedConcepts(projectId, generatedConcepts);
+      const concepts: PersistableConcept[] = result.decoded.map((variant, index) => ({
+        ...variant,
+        label: `Концепция ${CONCEPT_LABELS[index] ?? index + 1}`,
+        summary: goal.trim(),
+        changeExplanation: explicitChanges.trim() || goal.trim(),
+      }));
+      setPendingConcepts(concepts);
 
-      const partial = succeeded.length < variants.length ? "&partial=1" : "";
-      router.push(`/projects/${projectId}/concepts?generated=1${partial}`);
+      await persistAndProceed(result.attemptId, result.projectId, concepts, result.partial);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        setGenerationError("Генерация отменена. Данные брифа сохранены — можно запустить снова.");
+        setGenerationError(
+          "Генерация отменена в браузере. Черновик проекта уже сохраняется до отправки платного запроса, но запрос к AI-провайдеру мог уйти раньше отмены — отмена не гарантирует отсутствие оплаты. Проверьте проект перед повторным запуском.",
+        );
+      } else if (error instanceof GenerationFlowError) {
+        // requestAndDecodeConcepts already logged a safe diagnostic for this stage.
+        setGenerationError(error.message);
       } else {
-        setGenerationError("Не удалось связаться с сервером генерации. Проверьте подключение и попробуйте снова.");
+        logGenerationDiagnostic(currentAttemptId ?? "unknown", "unknown", error);
+        setGenerationError(
+          "Не удалось выполнить запрос генерации из-за непредвиденной ошибки браузера. Проверьте консоль диагностики, прежде чем запускать генерацию снова.",
+        );
       }
     } finally {
       setIsGenerating(false);
       abortControllerRef.current = null;
+    }
+  }
+
+  async function retrySave() {
+    if (!attemptId || !draftProjectId || isRetryingSave) return;
+    const pending = pendingConcepts.filter((concept) => !persistedKeys.includes(concept.key));
+    if (pending.length === 0) {
+      router.push(`/projects/${draftProjectId}/concepts?generated=1`);
+      return;
+    }
+
+    setIsRetryingSave(true);
+    setGenerationError(null);
+    try {
+      // persistConceptsIndividually only ever calls persistConcept (IndexedDB) — it has no
+      // dependency capable of reaching /api/concepts/generate, so this can never re-bill.
+      const result = await persistConceptsIndividually(
+        { persistConcept: saveGeneratedConcept, onDiagnostic: logGenerationDiagnostic },
+        attemptId,
+        draftProjectId,
+        pending,
+      );
+      setPersistedKeys((prev) => [...prev, ...result.persistedKeys]);
+
+      if (result.failedKeys.length > 0) {
+        setGenerationError(
+          "Повторное сохранение снова не удалось для части концепций. Изображения остаются доступны для скачивания ниже — оплата уже выполнена, поэтому просто повторите сохранение позже.",
+        );
+        return;
+      }
+
+      setPersistenceFailed(false);
+      router.push(`/projects/${draftProjectId}/concepts?generated=1`);
+    } finally {
+      setIsRetryingSave(false);
     }
   }
 
@@ -428,6 +484,10 @@ export function NewProjectWizard() {
           onConfirm={confirmAndGenerate}
           onCancelGeneration={cancelGeneration}
           onClose={() => setShowConfirmDialog(false)}
+          persistenceFailed={persistenceFailed}
+          isRetryingSave={isRetryingSave}
+          recoveryConcepts={pendingConcepts}
+          onRetrySave={retrySave}
         />
       ) : null}
     </div>

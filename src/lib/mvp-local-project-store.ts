@@ -24,9 +24,10 @@ import type {
  */
 
 const DB_NAME = "architect-olnoo-mvp";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const PROJECTS_STORE = "projects";
 const IMAGES_STORE = "concept-images";
+const ATTEMPTS_STORE = "generation-attempts";
 
 interface StoredGeneratedImage {
   imageKey: string;
@@ -53,6 +54,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(IMAGES_STORE)) {
         db.createObjectStore(IMAGES_STORE, { keyPath: "imageKey" });
+      }
+      if (!db.objectStoreNames.contains(ATTEMPTS_STORE)) {
+        db.createObjectStore(ATTEMPTS_STORE, { keyPath: "attemptId" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -143,6 +147,21 @@ export async function createDraftProject(input: DraftProjectInput): Promise<stri
   return id;
 }
 
+/**
+ * Records that a paid generation attempt was about to be sent, before the
+ * request goes out, so a lost or failed response can still be traced back
+ * to the project it was billed against.
+ */
+export async function createGenerationAttempt(projectId: string, attemptId: string): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(ATTEMPTS_STORE, "readwrite");
+  tx.objectStore(ATTEMPTS_STORE).put({ attemptId, projectId, createdAt: new Date().toISOString() });
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 export interface GeneratedConceptInput {
   label: string;
   summary: string;
@@ -153,41 +172,42 @@ export interface GeneratedConceptInput {
   warnings: string[];
 }
 
-/** Appends successfully generated concepts to an existing draft project. */
-export async function saveGeneratedConcepts(projectId: string, generated: GeneratedConceptInput[]): Promise<void> {
+/**
+ * Persists a single generated concept onto an existing draft project.
+ * Called once per variant (never as a batch) so that if IndexedDB fails
+ * partway through, the concepts that already saved are not lost or retried.
+ */
+export async function saveGeneratedConcept(projectId: string, item: GeneratedConceptInput): Promise<string> {
   const record = await getProjectRecord(projectId);
   if (!record) throw new Error(`Local project ${projectId} not found`);
 
   const now = new Date().toISOString();
-  const newConcepts: StoredConcept[] = [];
+  const conceptId = `${projectId}-concept-${record.concepts.length + 1}`;
+  const imageKey = `${projectId}:${conceptId}`;
+  await putImageBlob(imageKey, item.blob);
 
-  for (const [index, item] of generated.entries()) {
-    const conceptId = `${projectId}-concept-${record.concepts.length + index + 1}`;
-    const imageKey = `${projectId}:${conceptId}`;
-    await putImageBlob(imageKey, item.blob);
-    newConcepts.push({
-      id: conceptId,
-      label: item.label,
-      createdAt: now,
-      state: "awaiting-review",
-      summary: item.summary,
-      changeExplanation: item.changeExplanation,
-      generatedImage: { imageKey, mimeType: item.mimeType, mode: item.mode, warnings: item.warnings },
-    });
-  }
+  const newConcept: StoredConcept = {
+    id: conceptId,
+    label: item.label,
+    createdAt: now,
+    state: "awaiting-review",
+    summary: item.summary,
+    changeExplanation: item.changeExplanation,
+    generatedImage: { imageKey, mimeType: item.mimeType, mode: item.mode, warnings: item.warnings },
+  };
 
   const updated: StoredProject = {
     ...record,
     lifecycleStage: "concept",
     state: "awaiting-review",
     updatedAt: now,
-    concepts: [...record.concepts, ...newConcepts],
+    concepts: [...record.concepts, newConcept],
     activity: [
       {
         id: `${projectId}-a-${record.activity.length}`,
         actor: "AI Architect",
         actorType: "agent",
-        action: `Сгенерировано ${generated.length} ${generated.length === 1 ? "концепция" : "концепции"}`,
+        action: `Сгенерирована концепция «${item.label}»`,
         createdAt: now,
       },
       ...record.activity,
@@ -195,6 +215,7 @@ export async function saveGeneratedConcepts(projectId: string, generated: Genera
   };
 
   await putProjectRecord(updated);
+  return conceptId;
 }
 
 /** Reads a local project back, reattaching generated-image blobs in memory. */
