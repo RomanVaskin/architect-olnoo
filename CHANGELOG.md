@@ -17,6 +17,7 @@
 
 ### Added
 
+- Реализован четырёхшаговый мастер создания проекта: выбор доступного MVP-сценария, загрузка и валидация исходных материалов, формирование брифа, фиксация ограничений и переход в рабочее пространство
 - Реализован каркас frontend-приложения на Next.js (App Router) + TypeScript + Tailwind CSS: Global Navigation, Dashboard, Projects и Project Workspace (с внутренними разделами Overview, Brief, Source Materials, Site and Climate, AI Dialogue, Concepts, Selected Concept, Versions, Documents, Activity) на реалистичных мок-данных; технологический выбор зафиксирован в `docs/02-PLATFORM-ARCHITECTURE.md`
 - Добавлен `docs/01-PRODUCT.md`: философия продукта и принципы принятия решений (Core Principles, Decision Framework, Non-Goals), объединённые в одном документе с продуктовой спецификацией (Product Specification, User Roles, User Scenarios, Modules, MVP, Roadmap), чтобы не дробить документацию на множество мелких файлов
 - Добавлена утверждённая визуальная система Architect OLNOO на основе Life OLNOO
