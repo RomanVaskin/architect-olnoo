@@ -21,6 +21,9 @@ coverage/
 .nuxt/
 .turbo/
 .cache/
+.vercel
+next-env.d.ts
+*.tsbuildinfo
 
 # ==============================
 # Python
