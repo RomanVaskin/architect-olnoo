@@ -1,5 +1,5 @@
 import type { GenerationMode } from "@/lib/types";
-import type { GenerationStage } from "@/lib/generation-diagnostics";
+import { ConceptPersistError, type GenerationStage } from "./generation-diagnostics";
 
 export interface PersistableConcept {
   key: string;
@@ -49,7 +49,8 @@ export async function persistConceptsIndividually(
       conceptIdsByKey[concept.key] = conceptId;
       persistedKeys.push(concept.key);
     } catch (error) {
-      deps.onDiagnostic?.(attemptId, "persist-concept", error);
+      const stage: GenerationStage = error instanceof ConceptPersistError ? error.stage : "persist-concept";
+      deps.onDiagnostic?.(attemptId, stage, error);
       failedKeys.push(concept.key);
     }
   }

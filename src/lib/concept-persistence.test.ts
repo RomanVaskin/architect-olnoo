@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { persistConceptsIndividually, type PersistableConcept } from "./concept-persistence";
+import { ConceptPersistError } from "./generation-diagnostics";
 
 function makeConcept(key: string): PersistableConcept {
   return {
@@ -103,4 +104,40 @@ test("onDiagnostic is invoked with the attempt id and stage, never with a raw me
   await persistConceptsIndividually(deps, "attempt-42", "project-1", [makeConcept("x")]);
 
   assert.deepEqual(diagnostics, [{ attemptId: "attempt-42", stage: "persist-concept" }]);
+});
+
+test("a ConceptPersistError's stage (image vs metadata) reaches onDiagnostic, distinguishing the two failure sites", async () => {
+  const diagnostics: { attemptId: string; stage: string }[] = [];
+  const deps = {
+    persistConcept: async (_projectId: string, concept: PersistableConcept) => {
+      if (concept.key === "image-fail") throw new ConceptPersistError("persist-concept-image");
+      throw new ConceptPersistError("persist-concept-metadata");
+    },
+    onDiagnostic: (attemptId: string, stage: string) => {
+      diagnostics.push({ attemptId, stage });
+    },
+  };
+
+  await persistConceptsIndividually(deps, "attempt-1", "project-1", [makeConcept("image-fail"), makeConcept("metadata-fail")]);
+
+  assert.deepEqual(diagnostics, [
+    { attemptId: "attempt-1", stage: "persist-concept-image" },
+    { attemptId: "attempt-1", stage: "persist-concept-metadata" },
+  ]);
+});
+
+test("a plain Error (not a ConceptPersistError) still reports the generic persist-concept stage", async () => {
+  const diagnostics: { stage: string }[] = [];
+  const deps = {
+    persistConcept: async () => {
+      throw new Error("unclassified failure");
+    },
+    onDiagnostic: (_attemptId: string, stage: string) => {
+      diagnostics.push({ stage });
+    },
+  };
+
+  await persistConceptsIndividually(deps, "attempt-1", "project-1", [makeConcept("a")]);
+
+  assert.deepEqual(diagnostics, [{ stage: "persist-concept" }]);
 });

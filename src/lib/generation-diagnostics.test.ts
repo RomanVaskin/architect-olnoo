@@ -34,9 +34,10 @@ test("logGenerationDiagnostic logs only attemptId, stage, and a safe code — ne
 
   try {
     const error = new Error(SECRET);
-    const diagnostic = logGenerationDiagnostic("attempt-123", "persist-concept", error);
+    // "request" is not a persistence stage, so this is the console.error path.
+    const diagnostic = logGenerationDiagnostic("attempt-123", "request", error);
 
-    assert.deepEqual(diagnostic, { attemptId: "attempt-123", stage: "persist-concept", code: "Error" });
+    assert.deepEqual(diagnostic, { attemptId: "attempt-123", stage: "request", code: "Error" });
     assert.equal(calls.length, 1);
 
     const serializedCall = JSON.stringify(calls[0]);
@@ -44,5 +45,28 @@ test("logGenerationDiagnostic logs only attemptId, stage, and a safe code — ne
     assert.equal(calls[0].some((arg) => arg instanceof Error), false, "logged output must never contain the raw Error object");
   } finally {
     console.error = originalConsoleError;
+  }
+});
+
+test("logGenerationDiagnostic uses console.warn (not console.error) for persistence stages, so Next.js's dev error overlay does not fire on a handled save failure", () => {
+  const originalConsoleError = console.error;
+  const originalConsoleWarn = console.warn;
+  const errorCalls: unknown[][] = [];
+  const warnCalls: unknown[][] = [];
+  console.error = (...args: unknown[]) => errorCalls.push(args);
+  console.warn = (...args: unknown[]) => warnCalls.push(args);
+
+  try {
+    const error = new Error(SECRET);
+    for (const stage of ["persist-draft", "persist-attempt", "persist-concept", "persist-concept-image", "persist-concept-metadata"] as const) {
+      logGenerationDiagnostic("attempt-123", stage, error);
+    }
+
+    assert.equal(errorCalls.length, 0, "persistence stages must never use console.error");
+    assert.equal(warnCalls.length, 5);
+    assert.equal(JSON.stringify(warnCalls).includes(SECRET), false);
+  } finally {
+    console.error = originalConsoleError;
+    console.warn = originalConsoleWarn;
   }
 });

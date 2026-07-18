@@ -6,6 +6,12 @@ import type {
   Site,
   SourceFile,
 } from "@/lib/types";
+import { ConceptPersistError, safeErrorCode } from "./generation-diagnostics";
+import {
+  blobToStoredImageRecord,
+  storedImageRecordToBlob,
+  type AnyStoredImageRecord,
+} from "./concept-image-codec";
 
 /**
  * Temporary MVP-only frontend persistence for projects created through the
@@ -16,9 +22,11 @@ import type {
  * and this module retired.
  *
  * Stores project drafts, source-file metadata, and generated concept
- * metadata in one object store, and generated concept image bytes (as Blob,
- * never base64 in localStorage) in a second object store, keyed separately
- * so a project record stays small and JSON-serializable.
+ * metadata in one object store, and generated concept image bytes — as a
+ * structured-clone-safe `{ imageKey, bytes: ArrayBuffer, mimeType }` record,
+ * never a raw Blob (see `concept-image-codec.ts` — storing a Blob directly
+ * threw `DataCloneError` in production) — in a second object store, keyed
+ * separately so a project record stays small and JSON-serializable.
  *
  * Browser-only: every export here must be called from a Client Component.
  */
@@ -88,23 +96,26 @@ async function getProjectRecord(id: string): Promise<StoredProject | undefined> 
   return record ?? undefined;
 }
 
-async function putImageBlob(imageKey: string, blob: Blob): Promise<void> {
+async function putImageRecord(imageKey: string, blob: Blob, mimeType: string): Promise<void> {
+  const record = await blobToStoredImageRecord(imageKey, blob, mimeType);
   const db = await openDb();
   const tx = db.transaction(IMAGES_STORE, "readwrite");
-  tx.objectStore(IMAGES_STORE).put({ imageKey, blob });
+  tx.objectStore(IMAGES_STORE).put(record);
   await new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
 }
 
-async function getImageBlob(imageKey: string): Promise<Blob | undefined> {
+async function getStoredImageRecord(imageKey: string): Promise<AnyStoredImageRecord | undefined> {
   const db = await openDb();
   const tx = db.transaction(IMAGES_STORE, "readonly");
-  const record = await requestToPromise<{ imageKey: string; blob: Blob } | undefined>(
-    tx.objectStore(IMAGES_STORE).get(imageKey),
-  );
-  return record?.blob;
+  return requestToPromise<AnyStoredImageRecord | undefined>(tx.objectStore(IMAGES_STORE).get(imageKey));
+}
+
+async function getImageBlob(imageKey: string): Promise<Blob | undefined> {
+  const record = await getStoredImageRecord(imageKey);
+  return record ? storedImageRecordToBlob(record) : undefined;
 }
 
 export interface DraftProjectInput {
@@ -176,6 +187,12 @@ export interface GeneratedConceptInput {
  * Persists a single generated concept onto an existing draft project.
  * Called once per variant (never as a batch) so that if IndexedDB fails
  * partway through, the concepts that already saved are not lost or retried.
+ *
+ * The image and the project-metadata record are written in two separate
+ * steps, each with its own diagnostics (`ConceptPersistError.stage`), so a
+ * failure on one side can be told apart from a failure on the other. If the
+ * image write succeeds but the metadata write then fails, the image is left
+ * behind as a recoverable orphan — see `findOrphanImageKeys`/`recoverOrphanImage`.
  */
 export async function saveGeneratedConcept(projectId: string, item: GeneratedConceptInput): Promise<string> {
   const record = await getProjectRecord(projectId);
@@ -184,7 +201,13 @@ export async function saveGeneratedConcept(projectId: string, item: GeneratedCon
   const now = new Date().toISOString();
   const conceptId = `${projectId}-concept-${record.concepts.length + 1}`;
   const imageKey = `${projectId}:${conceptId}`;
-  await putImageBlob(imageKey, item.blob);
+
+  try {
+    await putImageRecord(imageKey, item.blob, item.mimeType);
+  } catch (error) {
+    console.warn("[mvp-local-project-store]", { stage: "persist-concept-image", imageKey, code: safeErrorCode(error) });
+    throw new ConceptPersistError("persist-concept-image");
+  }
 
   const newConcept: StoredConcept = {
     id: conceptId,
@@ -193,7 +216,7 @@ export async function saveGeneratedConcept(projectId: string, item: GeneratedCon
     state: "awaiting-review",
     summary: item.summary,
     changeExplanation: item.changeExplanation,
-    generatedImage: { imageKey, mimeType: item.mimeType, mode: item.mode, warnings: item.warnings },
+    generatedImage: { imageKey, mimeType: item.mimeType, mode: item.mode, warnings: [...item.warnings] },
   };
 
   const updated: StoredProject = {
@@ -214,7 +237,95 @@ export async function saveGeneratedConcept(projectId: string, item: GeneratedCon
     ],
   };
 
-  await putProjectRecord(updated);
+  try {
+    // structuredClone both validates and produces a plain deep copy — the same
+    // check IndexedDB performs internally, but run explicitly so a clone
+    // failure is caught here and reported as a metadata (not image) failure.
+    await putProjectRecord(structuredClone(updated));
+  } catch (error) {
+    console.warn("[mvp-local-project-store]", { stage: "persist-concept-metadata", projectId, conceptId, code: safeErrorCode(error) });
+    throw new ConceptPersistError("persist-concept-metadata");
+  }
+
+  return conceptId;
+}
+
+/**
+ * Every imageKey currently referenced by a concept, across all local
+ * projects — used to tell a live image apart from an orphan.
+ */
+async function allReferencedImageKeys(): Promise<Set<string>> {
+  const db = await openDb();
+  const tx = db.transaction(PROJECTS_STORE, "readonly");
+  const records = await requestToPromise<StoredProject[]>(tx.objectStore(PROJECTS_STORE).getAll());
+  const keys = new Set<string>();
+  for (const record of records) {
+    for (const concept of record.concepts) {
+      if (concept.generatedImage) keys.add(concept.generatedImage.imageKey);
+    }
+  }
+  return keys;
+}
+
+/**
+ * Image records saved by `saveGeneratedConcept` with no concept referencing
+ * them — this happens only when the image write succeeded but the following
+ * project-metadata write then failed (a paid, decoded image whose bytes are
+ * safe in IndexedDB, but not yet attached to any project).
+ */
+export async function findOrphanImageKeys(): Promise<string[]> {
+  const db = await openDb();
+  const tx = db.transaction(IMAGES_STORE, "readonly");
+  const records = await requestToPromise<AnyStoredImageRecord[]>(tx.objectStore(IMAGES_STORE).getAll());
+  const referenced = await allReferencedImageKeys();
+  return records.map((imageRecord) => imageRecord.imageKey).filter((imageKey) => !referenced.has(imageKey));
+}
+
+/**
+ * Attaches an orphaned image (see `findOrphanImageKeys`) to its project as a
+ * recovered concept. Local-only: it never calls the generation API — the
+ * image bytes already exist in IndexedDB from the original paid request.
+ */
+export async function recoverOrphanImage(imageKey: string): Promise<string> {
+  const projectId = imageKey.split(":")[0];
+  const record = await getProjectRecord(projectId);
+  if (!record) throw new Error(`Local project ${projectId} not found for orphan image ${imageKey}`);
+
+  const imageRecord = await getStoredImageRecord(imageKey);
+  if (!imageRecord) throw new Error(`Orphan image ${imageKey} not found`);
+  const mimeType = "mimeType" in imageRecord ? imageRecord.mimeType : imageRecord.blob.type;
+
+  const now = new Date().toISOString();
+  const conceptId = `${projectId}-concept-recovered-${record.concepts.length + 1}`;
+  const newConcept: StoredConcept = {
+    id: conceptId,
+    label: "Восстановленная концепция",
+    createdAt: now,
+    state: "awaiting-review",
+    summary: "Изображение восстановлено локально после сбоя сохранения — повторный запрос к AI-провайдеру не выполнялся.",
+    changeExplanation: "Восстановлено из ранее сохранённого изображения этого проекта.",
+    generatedImage: { imageKey, mimeType, mode: "auto", warnings: ["recovered-locally"] },
+  };
+
+  const updated: StoredProject = {
+    ...record,
+    lifecycleStage: "concept",
+    state: "awaiting-review",
+    updatedAt: now,
+    concepts: [...record.concepts, newConcept],
+    activity: [
+      {
+        id: `${projectId}-a-${record.activity.length}`,
+        actor: "Пользователь",
+        actorType: "user",
+        action: "Локально восстановлено ранее сохранённое изображение",
+        createdAt: now,
+      },
+      ...record.activity,
+    ],
+  };
+
+  await putProjectRecord(structuredClone(updated));
   return conceptId;
 }
 
