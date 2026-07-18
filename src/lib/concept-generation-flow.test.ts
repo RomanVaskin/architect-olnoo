@@ -116,8 +116,9 @@ test("diagnostics reported during the flow carry only the attempt id, stage, and
   );
 });
 
-test("an AbortError from the request is propagated as-is (not wrapped) so the caller can special-case cancellation", async () => {
+test("cancellation (AbortError) after the request is dispatched is wrapped in GenerationFlowError, never rethrown raw", async () => {
   const deps: RequestAndDecodeDeps = {
+    generateAttemptId: () => "attempt-cancel",
     persistDraft: async () => "project-1",
     persistAttempt: async () => {},
     requestGeneration: async () => {
@@ -127,11 +128,22 @@ test("an AbortError from the request is propagated as-is (not wrapped) so the ca
 
   await assert.rejects(
     () => requestAndDecodeConcepts(deps, new AbortController().signal),
-    (error: unknown) => error instanceof DOMException && error.name === "AbortError",
+    (error: unknown) => {
+      // Must not be a bare DOMException — attemptId/projectId would be lost.
+      assert.ok(!(error instanceof DOMException));
+      assert.ok(error instanceof GenerationFlowError);
+      assert.equal(error.attemptId, "attempt-cancel");
+      assert.equal(error.projectId, "project-1");
+      assert.equal(error.requiresAcknowledgement, true);
+      // Cancelling in the browser must not be presented as proof billing was avoided.
+      assert.equal(/не была оплачена/i.test(error.message), false);
+      assert.equal(/not billed/i.test(error.message), false);
+      return true;
+    },
   );
 });
 
-test("a rejected fetch (network failure) never claims the paid request was definitely unsent, and is marked ambiguous", async () => {
+test("a rejected fetch (network failure) never claims the paid request was definitely unsent, and requires acknowledgement before retrying", async () => {
   const deps: RequestAndDecodeDeps = {
     generateAttemptId: () => "attempt-net",
     persistDraft: async () => "project-1",
@@ -145,7 +157,7 @@ test("a rejected fetch (network failure) never claims the paid request was defin
     () => requestAndDecodeConcepts(deps, new AbortController().signal),
     (error: unknown) => {
       assert.ok(error instanceof GenerationFlowError);
-      assert.equal(error.ambiguous, true);
+      assert.equal(error.requiresAcknowledgement, true);
       assert.equal(error.attemptId, "attempt-net");
       assert.equal(error.projectId, "project-1");
       // Must not assert the request was unsent — a client-side network
@@ -158,7 +170,55 @@ test("a rejected fetch (network failure) never claims the paid request was defin
   );
 });
 
-test("persist-draft and persist-attempt failures are NOT marked ambiguous — the request genuinely never went out", async () => {
+test("an unparseable HTTP response requires acknowledgement before retrying", async () => {
+  const deps: RequestAndDecodeDeps = {
+    generateAttemptId: () => "attempt-parse",
+    persistDraft: async () => "project-1",
+    persistAttempt: async () => {},
+    requestGeneration: async () => new Response("not json", { status: 200 }),
+  };
+
+  await assert.rejects(
+    () => requestAndDecodeConcepts(deps, new AbortController().signal),
+    (error: unknown) => {
+      assert.ok(error instanceof GenerationFlowError);
+      assert.equal(error.stage, "parse-response");
+      assert.equal(error.requiresAcknowledgement, true);
+      assert.equal(error.attemptId, "attempt-parse");
+      assert.equal(error.projectId, "project-1");
+      return true;
+    },
+  );
+});
+
+test("receiving paid image payloads that all fail to decode requires acknowledgement before retrying", async () => {
+  const deps: RequestAndDecodeDeps = {
+    generateAttemptId: () => "attempt-decode",
+    persistDraft: async () => "project-1",
+    persistAttempt: async () => {},
+    requestGeneration: async () =>
+      jsonResponse({
+        variants: [
+          { status: "succeeded", mode: "auto", mimeType: "image/png", imageBase64: "not-valid-base64!!", warnings: [] },
+          { status: "succeeded", mode: "auto", mimeType: "image/png", imageBase64: "also-not-valid!!", warnings: [] },
+        ],
+      }),
+  };
+
+  await assert.rejects(
+    () => requestAndDecodeConcepts(deps, new AbortController().signal),
+    (error: unknown) => {
+      assert.ok(error instanceof GenerationFlowError);
+      assert.equal(error.stage, "decode-image");
+      assert.equal(error.requiresAcknowledgement, true);
+      assert.equal(error.attemptId, "attempt-decode");
+      assert.equal(error.projectId, "project-1");
+      return true;
+    },
+  );
+});
+
+test("persist-draft and persist-attempt failures do NOT require acknowledgement — the request genuinely never went out", async () => {
   const draftFailure: RequestAndDecodeDeps = {
     persistDraft: async () => {
       throw new Error("indexeddb unavailable");
@@ -171,13 +231,65 @@ test("persist-draft and persist-attempt failures are NOT marked ambiguous — th
     () => requestAndDecodeConcepts(draftFailure, new AbortController().signal),
     (error: unknown) => {
       assert.ok(error instanceof GenerationFlowError);
-      assert.equal(error.ambiguous, false);
+      assert.equal(error.requiresAcknowledgement, false);
+      return true;
+    },
+  );
+
+  const attemptFailure: RequestAndDecodeDeps = {
+    persistDraft: async () => "project-1",
+    persistAttempt: async () => {
+      throw new Error("indexeddb unavailable");
+    },
+    requestGeneration: async () => jsonResponse({ variants: [] }),
+  };
+
+  await assert.rejects(
+    () => requestAndDecodeConcepts(attemptFailure, new AbortController().signal),
+    (error: unknown) => {
+      assert.ok(error instanceof GenerationFlowError);
+      assert.equal(error.requiresAcknowledgement, false);
       return true;
     },
   );
 });
 
-test("extractRecoveryState pulls attemptId, projectId, ambiguous and message off a GenerationFlowError — this is what the wizard uses to keep its recovery state in sync", async () => {
+test("normal server validation/quota responses (response not ok, or zero succeeded variants) do NOT require acknowledgement", async () => {
+  const validationFailure: RequestAndDecodeDeps = {
+    persistDraft: async () => "project-1",
+    persistAttempt: async () => {},
+    requestGeneration: async () => jsonResponse({ error: { message: "Квота исчерпана" } }, 429),
+  };
+
+  await assert.rejects(
+    () => requestAndDecodeConcepts(validationFailure, new AbortController().signal),
+    (error: unknown) => {
+      assert.ok(error instanceof GenerationFlowError);
+      assert.equal(error.requiresAcknowledgement, false);
+      return true;
+    },
+  );
+
+  const noSucceededVariants: RequestAndDecodeDeps = {
+    persistDraft: async () => "project-1",
+    persistAttempt: async () => {},
+    requestGeneration: async () =>
+      jsonResponse({
+        variants: [{ status: "failed", mode: "auto", warnings: [], error: { code: "safety-rejection", message: "Отклонено" } }],
+      }),
+  };
+
+  await assert.rejects(
+    () => requestAndDecodeConcepts(noSucceededVariants, new AbortController().signal),
+    (error: unknown) => {
+      assert.ok(error instanceof GenerationFlowError);
+      assert.equal(error.requiresAcknowledgement, false);
+      return true;
+    },
+  );
+});
+
+test("extractRecoveryState pulls attemptId, projectId, requiresAcknowledgement and message off a GenerationFlowError — this is what the wizard uses to keep its recovery state in sync", async () => {
   const deps: RequestAndDecodeDeps = {
     generateAttemptId: () => "attempt-recover",
     persistDraft: async () => "project-recover",
@@ -195,7 +307,7 @@ test("extractRecoveryState pulls attemptId, projectId, ambiguous and message off
     assert.deepEqual(recovery, {
       attemptId: "attempt-recover",
       projectId: "project-recover",
-      ambiguous: true,
+      requiresAcknowledgement: true,
       message: (error as GenerationFlowError).message,
     });
   }

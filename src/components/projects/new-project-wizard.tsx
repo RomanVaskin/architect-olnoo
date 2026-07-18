@@ -112,8 +112,8 @@ export function NewProjectWizard() {
   const [persistedKeys, setPersistedKeys] = useState<string[]>([]);
   const [persistenceFailed, setPersistenceFailed] = useState(false);
   const [isRetryingSave, setIsRetryingSave] = useState(false);
-  const [ambiguousFailure, setAmbiguousFailure] = useState(false);
-  const [acknowledgedAmbiguous, setAcknowledgedAmbiguous] = useState(false);
+  const [requiresRetryAcknowledgement, setRequiresRetryAcknowledgement] = useState(false);
+  const [retryAcknowledged, setRetryAcknowledged] = useState(false);
 
   const rasterFiles = useMemo(() => files.filter(isRasterImage), [files]);
   const generationFiles = useMemo(
@@ -219,7 +219,7 @@ export function NewProjectWizard() {
 
   async function confirmAndGenerate() {
     if (isGenerating || persistenceFailed) return; // guard against duplicate submissions and re-billing after a lost save
-    if (ambiguousFailure && !acknowledgedAmbiguous) return; // an unresolved ambiguous network failure must be acknowledged first
+    if (requiresRetryAcknowledgement && !retryAcknowledged) return; // an unresolved risky-retry failure must be acknowledged first
     if (generationBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
       setGenerationError(formatCombinedImageSizeError(generationBytes));
       return;
@@ -228,8 +228,8 @@ export function NewProjectWizard() {
     setGenerationError(null);
     setPendingConcepts([]);
     setPersistedKeys([]);
-    setAmbiguousFailure(false);
-    setAcknowledgedAmbiguous(false);
+    setRequiresRetryAcknowledgement(false);
+    setRetryAcknowledged(false);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -293,17 +293,14 @@ export function NewProjectWizard() {
 
       await persistAndProceed(result.attemptId, result.projectId, concepts, result.partial);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        setGenerationError(
-          "Генерация отменена в браузере. Черновик проекта уже сохраняется до отправки платного запроса, но запрос к AI-провайдеру мог уйти раньше отмены — отмена не гарантирует отсутствие оплаты. Проверьте проект перед повторным запуском.",
-        );
-      } else if (error instanceof GenerationFlowError) {
-        // requestAndDecodeConcepts already logged a safe diagnostic for this stage.
+      if (error instanceof GenerationFlowError) {
+        // requestAndDecodeConcepts already logged a safe diagnostic for this stage
+        // (including for a wrapped AbortError — cancellation is never rethrown raw).
         // Keep the draft reachable — it exists whenever the error carries a projectId.
         const recovery = extractRecoveryState(error);
         if (recovery?.attemptId) setAttemptId(recovery.attemptId);
         if (recovery?.projectId) setDraftProjectId(recovery.projectId);
-        setAmbiguousFailure(recovery?.ambiguous ?? false);
+        setRequiresRetryAcknowledgement(recovery?.requiresAcknowledgement ?? false);
         setGenerationError(recovery?.message ?? error.message);
       } else {
         logGenerationDiagnostic(currentAttemptId ?? "unknown", "unknown", error);
@@ -503,9 +500,9 @@ export function NewProjectWizard() {
           onRetrySave={retrySave}
           attemptId={attemptId}
           draftProjectId={draftProjectId}
-          ambiguousFailure={ambiguousFailure}
-          acknowledgedAmbiguous={acknowledgedAmbiguous}
-          onAcknowledgeAmbiguousChange={setAcknowledgedAmbiguous}
+          requiresRetryAcknowledgement={requiresRetryAcknowledgement}
+          retryAcknowledged={retryAcknowledged}
+          onRetryAcknowledgedChange={setRetryAcknowledged}
         />
       ) : null}
     </div>

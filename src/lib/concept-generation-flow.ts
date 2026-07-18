@@ -25,24 +25,29 @@ export class GenerationFlowError extends Error {
   readonly attemptId?: string;
   readonly projectId?: string;
   /**
-   * True when whether the paid request reached the provider is genuinely
-   * unknown (e.g. the browser's fetch rejected before any HTTP response
-   * came back). Callers must not assume "not sent" in this case, and should
-   * require explicit user acknowledgement before starting another paid
-   * attempt — see docs on the ambiguous-failure UI in the wizard.
+   * True whenever a new paid attempt must not start until the user
+   * explicitly acknowledges the risk — either because whether the previous
+   * request reached the provider is genuinely unknown (network failure,
+   * cancellation after dispatch, an unparseable response), or because it's
+   * known to have completed and been billed but nothing could be recovered
+   * from it (every returned image failed to decode). False only for
+   * failures that happen before any request goes out (draft/attempt
+   * persistence) or for a normal, well-understood server response
+   * (validation, quota, safety rejection) that never leaves billing status
+   * or outcome in doubt.
    */
-  readonly ambiguous: boolean;
+  readonly requiresAcknowledgement: boolean;
 
   constructor(
     stage: GenerationStage,
     message: string,
-    meta?: { attemptId?: string; projectId?: string; ambiguous?: boolean },
+    meta?: { attemptId?: string; projectId?: string; requiresAcknowledgement?: boolean },
   ) {
     super(message);
     this.stage = stage;
     this.attemptId = meta?.attemptId;
     this.projectId = meta?.projectId;
-    this.ambiguous = meta?.ambiguous ?? false;
+    this.requiresAcknowledgement = meta?.requiresAcknowledgement ?? false;
   }
 }
 
@@ -79,7 +84,7 @@ export async function reuseOrCreateDraft(existingProjectId: string | null, creat
 export interface GenerationErrorRecovery {
   attemptId: string | null;
   projectId: string | null;
-  ambiguous: boolean;
+  requiresAcknowledgement: boolean;
   message: string;
 }
 
@@ -93,7 +98,7 @@ export function extractRecoveryState(error: unknown): GenerationErrorRecovery | 
   return {
     attemptId: error.attemptId ?? null,
     projectId: error.projectId ?? null,
-    ambiguous: error.ambiguous,
+    requiresAcknowledgement: error.requiresAcknowledgement,
     message: error.message,
   };
 }
@@ -139,12 +144,20 @@ export async function requestAndDecodeConcepts(
   try {
     response = await deps.requestGeneration(signal);
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
     report("request", error);
+    if (error instanceof DOMException && error.name === "AbortError") {
+      // Wrapped (never rethrown raw) so attemptId/projectId survive to the caller —
+      // cancelling in the browser does not prove the provider never received/billed the request.
+      throw new GenerationFlowError(
+        "request",
+        `Генерация была отменена в браузере после того, как запрос уже мог уйти на сервер (попытка ${attemptId}). Отмена не гарантирует, что платный запрос не был принят или оплачен провайдером. Прежде чем запускать новую генерацию, проверьте статус этой попытки.`,
+        { attemptId, projectId, requiresAcknowledgement: true },
+      );
+    }
     throw new GenerationFlowError(
       "request",
       `Браузер не получил ответ от сервера генерации (попытка ${attemptId}). Это не значит, что платный запрос не дошёл до AI-провайдера — по одному сетевому сбою на клиенте это определить нельзя. Прежде чем запускать новую генерацию, проверьте статус этой попытки (например, по сохранённому черновику проекта) и подтвердите, что предыдущий запрос точно не был принят.`,
-      { attemptId, projectId, ambiguous: true },
+      { attemptId, projectId, requiresAcknowledgement: true },
     );
   }
 
@@ -156,7 +169,7 @@ export async function requestAndDecodeConcepts(
     throw new GenerationFlowError(
       "parse-response",
       "Сервер вернул ответ, который не удалось разобрать, хотя платный запрос к AI-провайдеру мог завершиться успешно. Прежде чем запускать генерацию снова, проверьте статус биллинга AI-провайдера, чтобы не оплатить его дважды.",
-      { attemptId, projectId },
+      { attemptId, projectId, requiresAcknowledgement: true },
     );
   }
 
@@ -207,7 +220,7 @@ export async function requestAndDecodeConcepts(
     throw new GenerationFlowError(
       "decode-image",
       "AI-провайдер вернул оплаченные изображения, но ни одно не удалось обработать в этом браузере. Не запускайте генерацию повторно — обновите страницу и, если ошибка повторится, обратитесь в поддержку с идентификатором попытки.",
-      { attemptId, projectId },
+      { attemptId, projectId, requiresAcknowledgement: true },
     );
   }
 

@@ -52,9 +52,9 @@ interface GenerationConfirmDialogProps {
   onRetrySave: () => void;
   attemptId: string | null;
   draftProjectId: string | null;
-  ambiguousFailure: boolean;
-  acknowledgedAmbiguous: boolean;
-  onAcknowledgeAmbiguousChange: (acknowledged: boolean) => void;
+  requiresRetryAcknowledgement: boolean;
+  retryAcknowledged: boolean;
+  onRetryAcknowledgedChange: (acknowledged: boolean) => void;
 }
 
 export function GenerationConfirmDialog({
@@ -74,12 +74,12 @@ export function GenerationConfirmDialog({
   onRetrySave,
   attemptId,
   draftProjectId,
-  ambiguousFailure,
-  acknowledgedAmbiguous,
-  onAcknowledgeAmbiguousChange,
+  requiresRetryAcknowledgement,
+  retryAcknowledged,
+  onRetryAcknowledgedChange,
 }: GenerationConfirmDialogProps) {
   const controlsDisabled = isGenerating || persistenceFailed;
-  const confirmBlockedByAmbiguity = ambiguousFailure && !acknowledgedAmbiguous;
+  const confirmBlockedByAcknowledgement = requiresRetryAcknowledgement && !retryAcknowledged;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" role="dialog" aria-modal="true" aria-labelledby="generation-dialog-title">
@@ -163,17 +163,17 @@ export function GenerationConfirmDialog({
           </div>
         ) : null}
 
-        {ambiguousFailure ? (
+        {requiresRetryAcknowledgement ? (
           <label className="mt-3 flex items-start gap-3 rounded-xl border border-border bg-surface-soft p-4 text-sm text-ink-secondary">
             <input
               type="checkbox"
-              checked={acknowledgedAmbiguous}
-              onChange={(event) => onAcknowledgeAmbiguousChange(event.target.checked)}
+              checked={retryAcknowledged}
+              onChange={(event) => onRetryAcknowledgedChange(event.target.checked)}
               className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-action)]"
             />
             <span>
-              Я проверил(а) статус этой попытки и подтверждаю запуск новой платной генерации, даже если предыдущий запрос уже был
-              принят провайдером.
+              Понимаю, что предыдущая попытка{attemptId ? ` (${attemptId})` : ""} могла быть оплачена AI-провайдером — независимо от
+              того, известен её результат или нет, — и всё равно подтверждаю запуск новой платной генерации.
             </span>
           </label>
         ) : null}
@@ -215,7 +215,7 @@ export function GenerationConfirmDialog({
               <Button type="button" variant="ghost" onClick={onClose}>
                 Отмена
               </Button>
-              <Button type="button" onClick={onConfirm} disabled={confirmBlockedByAmbiguity}>
+              <Button type="button" onClick={onConfirm} disabled={confirmBlockedByAcknowledgement}>
                 Начать генерацию
               </Button>
             </>
