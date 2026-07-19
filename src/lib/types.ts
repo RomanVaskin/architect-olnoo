@@ -56,11 +56,61 @@ export interface ProjectBrief {
   budgetNote?: string;
 }
 
+export interface SourceImageDimensions {
+  width: number;
+  height: number;
+}
+
 export interface SourceFile {
   id: string;
   name: string;
   kind: "photo" | "drawing" | "document";
   uploadedAt: string;
+  /** Key into the source-image byte store (see mvp-local-project-store.ts) — present only for raster photos whose bytes were persisted. */
+  imageKey?: string;
+  mimeType?: string;
+  dimensions?: SourceImageDimensions;
+  /** Attached in memory only when a local project is read back from IndexedDB; never serialized. */
+  imageBlob?: Blob;
+}
+
+/**
+ * A view is a rectangular region of a source photo — either the whole photo
+ * (the common case) or one panel of a vertically stacked multi-view collage
+ * (see src/lib/collage-detector.ts). Purely descriptive metadata: the crop
+ * is applied at render time against the original stored bytes, which are
+ * never modified or re-encoded.
+ */
+export type SourceViewRole = "front" | "side" | "rear" | "detail" | "other";
+
+export const SOURCE_VIEW_ROLE_LABELS: Record<SourceViewRole, string> = {
+  front: "Главный фасад",
+  side: "Боковой фасад",
+  rear: "Задний фасад",
+  detail: "Деталь",
+  other: "Другое",
+};
+
+export interface SourceViewCropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Only the Primary View (`isPrimary: true`) is sent to generation in the
+ * next MVP phase — this phase only reviews, enables/disables, and persists
+ * views; it never calls the generation API.
+ */
+export interface SourceView {
+  id: string;
+  sourceImageId: string;
+  crop: SourceViewCropRect;
+  order: number;
+  role: SourceViewRole;
+  isPrimary: boolean;
+  imageKey: string;
 }
 
 /**
@@ -142,6 +192,8 @@ export interface Project {
   site: Site;
   brief: ProjectBrief;
   sourceFiles: SourceFile[];
+  /** Optional so existing mock projects don't need a value; wizard-created projects always set it (possibly []). */
+  sourceViews?: SourceView[];
   concepts: Concept[];
   selectedConceptId: string | null;
   versions: ConceptVersionEntry[];

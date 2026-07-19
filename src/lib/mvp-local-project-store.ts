@@ -5,6 +5,7 @@ import type {
   ProjectBrief,
   Site,
   SourceFile,
+  SourceView,
 } from "@/lib/types";
 import { ConceptPersistError, safeErrorCode } from "./generation-diagnostics";
 import {
@@ -12,6 +13,7 @@ import {
   storedImageRecordToBlob,
   type AnyStoredImageRecord,
 } from "./concept-image-codec";
+import { buildSourceRecords, type SourceFileRecordInput, type SourceViewRecordInput } from "./source-view-builder";
 
 /**
  * Temporary MVP-only frontend persistence for projects created through the
@@ -32,10 +34,11 @@ import {
  */
 
 const DB_NAME = "architect-olnoo-mvp";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const PROJECTS_STORE = "projects";
 const IMAGES_STORE = "concept-images";
 const ATTEMPTS_STORE = "generation-attempts";
+const SOURCE_IMAGES_STORE = "source-images";
 
 interface StoredGeneratedImage {
   imageKey: string;
@@ -48,7 +51,9 @@ interface StoredConcept extends Omit<Concept, "generatedImage"> {
   generatedImage?: StoredGeneratedImage;
 }
 
-interface StoredProject extends Omit<Project, "concepts"> {
+interface StoredProject extends Omit<Project, "concepts" | "sourceFiles"> {
+  sourceFiles: SourceFile[];
+  sourceViews: SourceView[];
   concepts: StoredConcept[];
 }
 
@@ -65,6 +70,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(ATTEMPTS_STORE)) {
         db.createObjectStore(ATTEMPTS_STORE, { keyPath: "attemptId" });
+      }
+      if (!db.objectStoreNames.contains(SOURCE_IMAGES_STORE)) {
+        db.createObjectStore(SOURCE_IMAGES_STORE, { keyPath: "imageKey" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -93,7 +101,9 @@ async function getProjectRecord(id: string): Promise<StoredProject | undefined> 
   const db = await openDb();
   const tx = db.transaction(PROJECTS_STORE, "readonly");
   const record = await requestToPromise<StoredProject | undefined>(tx.objectStore(PROJECTS_STORE).get(id));
-  return record ?? undefined;
+  // Records written before sourceViews existed have no such field — normalize
+  // once here so every other function can rely on it always being an array.
+  return record ? { ...record, sourceViews: record.sourceViews ?? [] } : undefined;
 }
 
 async function putImageRecord(imageKey: string, blob: Blob, mimeType: string): Promise<void> {
@@ -118,18 +128,61 @@ async function getImageBlob(imageKey: string): Promise<Blob | undefined> {
   return record ? storedImageRecordToBlob(record) : undefined;
 }
 
+async function putSourceImageRecord(imageKey: string, blob: Blob, mimeType: string): Promise<void> {
+  const record = await blobToStoredImageRecord(imageKey, blob, mimeType);
+  const db = await openDb();
+  const tx = db.transaction(SOURCE_IMAGES_STORE, "readwrite");
+  tx.objectStore(SOURCE_IMAGES_STORE).put(record);
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function getSourceImageBlob(imageKey: string): Promise<Blob | undefined> {
+  const db = await openDb();
+  const tx = db.transaction(SOURCE_IMAGES_STORE, "readonly");
+  const record = await requestToPromise<AnyStoredImageRecord | undefined>(tx.objectStore(SOURCE_IMAGES_STORE).get(imageKey));
+  return record ? storedImageRecordToBlob(record) : undefined;
+}
+
+export interface DraftSourceFileInput extends SourceFileRecordInput {
+  /** Raw bytes for a raster photo — present iff hasImage is true. Never written into the project's JSON record (see buildSourceRecords). */
+  file?: File;
+}
+
 export interface DraftProjectInput {
   name: string;
   buildingType: string;
   site: Site;
   brief: ProjectBrief;
-  sourceFiles: Pick<SourceFile, "name" | "kind">[];
+  sourceFiles: DraftSourceFileInput[];
+  /** Confirmed Source Views (see Source Views confirmation step) — never persisted here as bytes, only as crop metadata pointing at a sourceFiles[].imageKey. */
+  sourceViews?: SourceViewRecordInput[];
 }
 
-/** Creates and persists a new project draft, returning its id. */
+/**
+ * Creates and persists a new project draft, returning its id. Source-image
+ * bytes are written to the source-images store before the project's JSON
+ * metadata record is written, and the metadata record itself is
+ * structured-clone-checked first — the same defensive order already used by
+ * saveGeneratedConcept, so a bug that leaks a File/Blob into the metadata
+ * fails loudly here instead of throwing DataCloneError deep inside IndexedDB.
+ */
 export async function createDraftProject(input: DraftProjectInput): Promise<string> {
   const id = `local-${crypto.randomUUID()}`;
   const now = new Date().toISOString();
+
+  const { sourceFiles, sourceViews } = buildSourceRecords(id, now, input.sourceFiles, input.sourceViews ?? []);
+
+  await Promise.all(
+    input.sourceFiles.map(async (fileInput, index) => {
+      if (!fileInput.file) return;
+      const imageKey = sourceFiles[index].imageKey;
+      if (!imageKey) return;
+      await putSourceImageRecord(imageKey, fileInput.file, fileInput.mimeType ?? fileInput.file.type);
+    }),
+  );
 
   const record: StoredProject = {
     id,
@@ -141,12 +194,8 @@ export async function createDraftProject(input: DraftProjectInput): Promise<stri
     updatedAt: now,
     site: input.site,
     brief: input.brief,
-    sourceFiles: input.sourceFiles.map((file, index) => ({
-      id: `${id}-src-${index}`,
-      name: file.name,
-      kind: file.kind,
-      uploadedAt: now,
-    })),
+    sourceFiles,
+    sourceViews,
     concepts: [],
     selectedConceptId: null,
     versions: [],
@@ -154,7 +203,7 @@ export async function createDraftProject(input: DraftProjectInput): Promise<stri
     activity: [{ id: `${id}-a-0`, actor: "Пользователь", actorType: "user", action: "Проект создан в мастере", createdAt: now }],
   };
 
-  await putProjectRecord(record);
+  await putProjectRecord(structuredClone(record));
   return id;
 }
 
@@ -329,7 +378,7 @@ export async function recoverOrphanImage(imageKey: string): Promise<string> {
   return conceptId;
 }
 
-/** Reads a local project back, reattaching generated-image blobs in memory. */
+/** Reads a local project back, reattaching generated-image and source-image blobs in memory. */
 export async function getLocalProject(id: string): Promise<Project | undefined> {
   const record = await getProjectRecord(id);
   if (!record) return undefined;
@@ -352,5 +401,13 @@ export async function getLocalProject(id: string): Promise<Project | undefined> 
     }),
   );
 
-  return { ...record, concepts };
+  const sourceFiles: SourceFile[] = await Promise.all(
+    record.sourceFiles.map(async (file): Promise<SourceFile> => {
+      if (!file.imageKey) return file;
+      const imageBlob = await getSourceImageBlob(file.imageKey);
+      return imageBlob ? { ...file, imageBlob } : file;
+    }),
+  );
+
+  return { ...record, sourceFiles, concepts };
 }

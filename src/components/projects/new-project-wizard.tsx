@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { GenerationMode } from "@/lib/types";
+import type { GenerationMode, SourceImageDimensions } from "@/lib/types";
 import {
   createDraftProject,
   createGenerationAttempt,
@@ -24,6 +24,7 @@ import {
   type DraftProjectInput,
 } from "@/lib/mvp-local-project-store";
 import { GenerationConfirmDialog } from "@/components/projects/generation-confirm-dialog";
+import { SourceViewsStep, type ConfirmedSourceView, type SourceViewsChange } from "@/components/projects/source-views-step";
 import { MAX_TOTAL_INLINE_IMAGE_BYTES, formatCombinedImageSizeError } from "@/lib/ai/request-validation";
 import { requestAndDecodeConcepts, reuseOrCreateDraft, extractRecoveryState, GenerationFlowError } from "@/lib/concept-generation-flow";
 import { persistConceptsIndividually, type PersistableConcept } from "@/lib/concept-persistence";
@@ -71,7 +72,7 @@ const projectTypes = [
   },
 ] as const;
 
-const steps = ["Тип проекта", "Материалы", "Пожелания", "Ограничения"];
+const steps = ["Тип проекта", "Материалы", "Ракурсы", "Пожелания", "Ограничения"];
 
 const DEFAULT_MUST_KEEP = ["Геометрия и основные пропорции", "Форма и уклон крыши", "Положение окон и дверей"];
 const DEFAULT_MAY_CHANGE = ["Материалы фасада", "Цветовая палитра", "Наружное освещение"];
@@ -115,6 +116,13 @@ export function NewProjectWizard() {
   const [requiresRetryAcknowledgement, setRequiresRetryAcknowledgement] = useState(false);
   const [retryAcknowledged, setRetryAcknowledged] = useState(false);
 
+  const [confirmedSourceViews, setConfirmedSourceViews] = useState<ConfirmedSourceView[]>([]);
+  const [sourceDimensions, setSourceDimensions] = useState<Record<string, SourceImageDimensions>>({});
+  const handleSourceViewsChange = useCallback((change: SourceViewsChange) => {
+    setConfirmedSourceViews(change.views);
+    setSourceDimensions(change.dimensionsByFileKey);
+  }, []);
+
   const rasterFiles = useMemo(() => files.filter(isRasterImage), [files]);
   const generationFiles = useMemo(
     () => rasterFiles.filter((file) => generationKeys.includes(fileKey(file))),
@@ -125,7 +133,8 @@ export function NewProjectWizard() {
   const canContinue = useMemo(() => {
     if (step === 0) return projectType === "existing-house";
     if (step === 1) return files.length > 0;
-    if (step === 2) return projectName.trim().length > 1 && goal.trim().length > 15;
+    if (step === 2) return true; // Source Views is a review step — nothing is required to move past it
+    if (step === 3) return projectName.trim().length > 1 && goal.trim().length > 15;
     return mustKeep.length > 0 && explicitChanges.trim().length > 5;
   }, [explicitChanges, files.length, goal, mustKeep.length, projectName, projectType, step]);
 
@@ -254,6 +263,17 @@ export function NewProjectWizard() {
       sourceFiles: files.map((file) => ({
         name: file.name,
         kind: file.type === "application/pdf" ? "document" : "photo",
+        hasImage: isRasterImage(file),
+        mimeType: file.type,
+        dimensions: sourceDimensions[fileKey(file)],
+        file: isRasterImage(file) ? file : undefined,
+      })),
+      sourceViews: confirmedSourceViews.map((view) => ({
+        sourceFileIndex: files.findIndex((file) => fileKey(file) === view.fileKey),
+        crop: view.crop,
+        order: view.order,
+        role: view.role,
+        isPrimary: view.isPrimary,
       })),
     };
 
@@ -450,6 +470,17 @@ export function NewProjectWizard() {
       ) : null}
 
       {step === 2 ? (
+        <section aria-labelledby="source-views-title">
+          <h1 id="source-views-title" className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">Проверьте ракурсы</h1>
+          <p className="mt-2 max-w-2xl text-sm text-ink-secondary sm:text-base">
+            Если одна фотография на самом деле содержит несколько видов дома, поставленных друг над другом (коллаж), Architect OLNOO
+            предложит разделить её на отдельные ракурсы для проверки.
+          </p>
+          <SourceViewsStep files={files} onChange={handleSourceViewsChange} />
+        </section>
+      ) : null}
+
+      {step === 3 ? (
         <section aria-labelledby="project-brief-title">
           <h1 id="project-brief-title" className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">Опишите желаемый результат</h1>
           <p className="mt-2 max-w-2xl text-sm text-ink-secondary sm:text-base">Пишите обычными словами. Architect OLNOO самостоятельно сформирует рабочий бриф.</p>
@@ -461,7 +492,7 @@ export function NewProjectWizard() {
         </section>
       ) : null}
 
-      {step === 3 ? (
+      {step === 4 ? (
         <section aria-labelledby="constraints-title">
           <h1 id="constraints-title" className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">Зафиксируйте ограничения</h1>
           <p className="mt-2 max-w-2xl text-sm text-ink-secondary sm:text-base">По умолчанию Architect OLNOO сохраняет геометрию существующего дома. Вы можете уточнить правила до запуска.</p>
@@ -477,7 +508,7 @@ export function NewProjectWizard() {
       <div className="flex items-center justify-between border-t border-border pt-6">
         <Button variant="ghost" type="button" onClick={() => step === 0 ? router.push("/projects") : setStep(step - 1)}><ArrowLeft className="h-4 w-4" />{step === 0 ? "К проектам" : "Назад"}</Button>
         <div className="text-right">
-          {!canContinue ? <p className="mb-2 text-xs text-ink-secondary">{step === 1 ? "Добавьте хотя бы один файл" : step === 2 ? "Заполните название и подробно опишите цель" : step === 3 ? "Укажите обязательное изменение" : ""}</p> : null}
+          {!canContinue ? <p className="mb-2 text-xs text-ink-secondary">{step === 1 ? "Добавьте хотя бы один файл" : step === 3 ? "Заполните название и подробно опишите цель" : step === 4 ? "Укажите обязательное изменение" : ""}</p> : null}
           <Button type="button" disabled={!canContinue} onClick={continueFlow}>{step === steps.length - 1 ? "Создать проект" : "Продолжить"}<ArrowRight className="h-4 w-4" /></Button>
         </div>
       </div>
