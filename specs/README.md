@@ -1,6 +1,6 @@
 # Specs
 
-**Version:** 0.4.0
+**Version:** 0.5.0
 **Status:** Draft
 **Last Updated:** 2026-07-20
 
@@ -19,6 +19,7 @@
 | [authentication.md](authentication.md) | Supabase Auth, cookie-сессии и защита платных AI-маршрутов |
 | [server-project-sync.md](server-project-sync.md) | Идемпотентный перенос локального проекта и изображений в защищённый backend |
 | [server-project-repository.md](server-project-repository.md) | Чтение/запись облачных проектов, приватные изображения, резолвер `/projects/:id`, серверное сохранение выбора концепции и отзыва |
+| [cloud-generation-pipeline.md](cloud-generation-pipeline.md) | Платная генерация/исправление концепций для облачных проектов и восстанавливаемое состояние платной попытки |
 | [image-upload.md](image-upload.md) | Спецификация загрузки изображений пользователем |
 | [multi-view-source-pipeline.md](multi-view-source-pipeline.md) | Хранение реальных байт исходных фотографий и разбивка вертикальных коллажей на отдельные ракурсы для проверки перед генерацией |
 | [vision-agent.md](vision-agent.md) | Спецификация агента компьютерного зрения |

@@ -1,24 +1,30 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { requestAndDecodeConcepts, extractRecoveryState, GenerationFlowError } from "@/lib/concept-generation-flow";
 import { prepareConceptCorrection } from "@/lib/concept-correction";
 import { persistConceptsIndividually, type PersistableConcept } from "@/lib/concept-persistence";
 import { logGenerationDiagnostic } from "@/lib/generation-diagnostics";
 import { createGenerationAttempt, saveGeneratedConcept } from "@/lib/mvp-local-project-store";
 import { useProjectConceptReview } from "@/lib/use-project-concept-review";
-import { isLocalProjectId } from "@/lib/project-id";
+import { isLocalProjectId, isServerProjectId } from "@/lib/project-id";
+import { base64ToBlob } from "@/lib/base64";
+import { CloudGenerationRequestError, requestCloudCorrection, requestCloudGeneration } from "@/lib/cloud-generation-client";
 import { ConceptCard } from "./concept-card";
 import { ConceptComparison } from "./concept-comparison";
 import { ConceptCorrectionDialog } from "./concept-correction-dialog";
 import { ConceptDetail } from "./concept-detail";
+import { CloudGenerateDialog } from "./cloud-generate-dialog";
 import type { Concept, GenerationMode, Project } from "@/lib/types";
 
 type View = "gallery" | "compare" | "detail";
 
-export function ConceptsWorkspace({ project }: { project: Project }) {
+export function ConceptsWorkspace({ project, onRefresh }: { project: Project; onRefresh?: () => Promise<void> }) {
+  const isCloudProject = isServerProjectId(project.id);
   const { selectedConceptId, feedback, selectConcept, addFeedback, error: reviewError } = useProjectConceptReview(project);
   const [view, setView] = useState<View>("gallery");
   const [compareIds, setCompareIds] = useState<string[]>([]);
@@ -33,7 +39,20 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
   const [isRetryingCorrectionSave, setIsRetryingCorrectionSave] = useState(false);
   const [requiresCorrectionAcknowledgement, setRequiresCorrectionAcknowledgement] = useState(false);
   const [correctionAcknowledged, setCorrectionAcknowledged] = useState(false);
+  const [cloudCorrectionRawImage, setCloudCorrectionRawImage] = useState<{ base64: string; mimeType: string } | null>(null);
   const correctionAbortRef = useRef<AbortController | null>(null);
+
+  const [showCloudGenerateDialog, setShowCloudGenerateDialog] = useState(false);
+  const [cloudGenerateAttemptKey, setCloudGenerateAttemptKey] = useState<string | null>(null);
+  const [cloudGenerateMode, setCloudGenerateMode] = useState<GenerationMode>("balanced");
+  const [cloudGenerateAutoReview, setCloudGenerateAutoReview] = useState(true);
+  const [isCloudGenerating, setIsCloudGenerating] = useState(false);
+  const [cloudGenerateError, setCloudGenerateError] = useState<string | null>(null);
+  const [cloudGenerateRequiresAck, setCloudGenerateRequiresAck] = useState(false);
+  const [cloudGenerateAcknowledged, setCloudGenerateAcknowledged] = useState(false);
+  const [cloudGeneratePersistenceFailed, setCloudGeneratePersistenceFailed] = useState(false);
+  const [cloudGenerateRawImage, setCloudGenerateRawImage] = useState<{ base64: string; mimeType: string } | null>(null);
+  const [isRetryingCloudGenerateSave, setIsRetryingCloudGenerateSave] = useState(false);
 
   function toggleCompare(conceptId: string) {
     setCompareIds((prev) => {
@@ -58,11 +77,12 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
     setCorrectionConcept(concept);
     setCorrectionMode(concept.generatedImage?.mode ?? "balanced");
     setCorrectionError(null);
-    setCorrectionAttemptId(null);
+    setCorrectionAttemptId(isCloudProject ? crypto.randomUUID() : null);
     setPendingCorrection(null);
     setCorrectionPersistenceFailed(false);
     setRequiresCorrectionAcknowledgement(false);
     setCorrectionAcknowledged(false);
+    setCloudCorrectionRawImage(null);
   }
 
   function closeCorrection() {
@@ -73,9 +93,10 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
     setCorrectionPersistenceFailed(false);
     setRequiresCorrectionAcknowledgement(false);
     setCorrectionAcknowledged(false);
+    setCloudCorrectionRawImage(null);
   }
 
-  async function persistCorrection(attemptId: string, concept: PersistableConcept) {
+  async function persistLocalCorrection(attemptId: string, concept: PersistableConcept) {
     const result = await persistConceptsIndividually(
       { persistConcept: saveGeneratedConcept, onDiagnostic: logGenerationDiagnostic },
       attemptId,
@@ -93,17 +114,8 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
     return true;
   }
 
-  async function runCorrection() {
-    if (!correctionConcept || isCorrecting || correctionPersistenceFailed) return;
-    if (requiresCorrectionAcknowledgement && !correctionAcknowledged) return;
-
-    setIsCorrecting(true);
-    setCorrectionError(null);
-    setPendingCorrection(null);
-    setCorrectionPersistenceFailed(false);
-    setRequiresCorrectionAcknowledgement(false);
-    setCorrectionAcknowledged(false);
-
+  async function runLocalCorrection() {
+    if (!correctionConcept) return;
     const controller = new AbortController();
     correctionAbortRef.current = controller;
     let currentAttemptId = "unknown";
@@ -157,7 +169,7 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
         parentConceptId: correctionConcept.id,
       };
       setPendingCorrection(corrected);
-      await persistCorrection(result.attemptId, corrected);
+      await persistLocalCorrection(result.attemptId, corrected);
     } catch (error) {
       const recovery = extractRecoveryState(error);
       if (error instanceof GenerationFlowError && recovery) {
@@ -173,21 +185,183 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
         );
       }
     } finally {
-      setIsCorrecting(false);
       correctionAbortRef.current = null;
     }
   }
 
+  async function runCloudCorrection() {
+    if (!correctionConcept) return;
+    const acknowledging = requiresCorrectionAcknowledgement && correctionAcknowledged;
+    const attemptKey = acknowledging || !correctionAttemptId ? crypto.randomUUID() : correctionAttemptId;
+    setCorrectionAttemptId(attemptKey);
+    setRequiresCorrectionAcknowledgement(false);
+    setCorrectionAcknowledged(false);
+
+    try {
+      const result = await requestCloudCorrection(project.id, correctionConcept.id, { attemptKey, mode: correctionMode });
+      if (result.status === "succeeded") {
+        setCorrectionConcept(null);
+        await onRefresh?.();
+        return;
+      }
+      if (result.status === "persistence-failed") {
+        setCorrectionPersistenceFailed(true);
+        setCloudCorrectionRawImage({ base64: result.imageBase64, mimeType: result.mimeType });
+        setPendingCorrection({
+          key: attemptKey,
+          label: "Исправленная версия",
+          summary: "",
+          changeExplanation: "",
+          blob: base64ToBlob(result.imageBase64, result.mimeType),
+          mimeType: result.mimeType,
+          mode: correctionMode,
+          warnings: [],
+        });
+        setCorrectionError(result.error.message);
+        return;
+      }
+      setRequiresCorrectionAcknowledgement(result.requiresAcknowledgement);
+      setCorrectionError(result.error.message);
+    } catch (error) {
+      if (error instanceof CloudGenerationRequestError) {
+        setRequiresCorrectionAcknowledgement(error.requiresAcknowledgement);
+        setCorrectionError(error.message);
+      } else {
+        setCorrectionError("Не удалось выполнить исправление из-за непредвиденной ошибки браузера.");
+      }
+    }
+  }
+
+  async function runCorrection() {
+    if (!correctionConcept || isCorrecting || correctionPersistenceFailed) return;
+    if (requiresCorrectionAcknowledgement && !correctionAcknowledged) return;
+
+    setIsCorrecting(true);
+    setCorrectionError(null);
+    setPendingCorrection(null);
+    setCorrectionPersistenceFailed(false);
+
+    try {
+      if (isCloudProject) {
+        await runCloudCorrection();
+      } else {
+        setRequiresCorrectionAcknowledgement(false);
+        setCorrectionAcknowledged(false);
+        await runLocalCorrection();
+      }
+    } finally {
+      setIsCorrecting(false);
+    }
+  }
+
   async function retryCorrectionSave() {
-    if (!pendingCorrection || !correctionAttemptId || isRetryingCorrectionSave) return;
+    if (isRetryingCorrectionSave || !correctionConcept) return;
     setIsRetryingCorrectionSave(true);
     setCorrectionError(null);
     try {
+      if (isCloudProject) {
+        if (!correctionAttemptId || !cloudCorrectionRawImage) return;
+        const result = await requestCloudCorrection(project.id, correctionConcept.id, {
+          attemptKey: correctionAttemptId,
+          mode: correctionMode,
+          retryImageBase64: cloudCorrectionRawImage.base64,
+          retryMimeType: cloudCorrectionRawImage.mimeType,
+        });
+        if (result.status === "succeeded") {
+          setCorrectionPersistenceFailed(false);
+          setCorrectionConcept(null);
+          await onRefresh?.();
+          return;
+        }
+        setCorrectionError(result.error.message);
+        return;
+      }
+      if (!pendingCorrection || !correctionAttemptId) return;
       // IndexedDB-only recovery. This path has no fetch dependency and can
       // never start another paid generation or reviewer call.
-      await persistCorrection(correctionAttemptId, pendingCorrection);
+      await persistLocalCorrection(correctionAttemptId, pendingCorrection);
     } finally {
       setIsRetryingCorrectionSave(false);
+    }
+  }
+
+  function openCloudGenerate() {
+    setShowCloudGenerateDialog(true);
+    setCloudGenerateAttemptKey(crypto.randomUUID());
+    setCloudGenerateError(null);
+    setCloudGenerateRequiresAck(false);
+    setCloudGenerateAcknowledged(false);
+    setCloudGeneratePersistenceFailed(false);
+    setCloudGenerateRawImage(null);
+  }
+
+  function closeCloudGenerate() {
+    if (isCloudGenerating) return;
+    setShowCloudGenerateDialog(false);
+  }
+
+  async function runCloudGenerate() {
+    if (isCloudGenerating || cloudGeneratePersistenceFailed) return;
+    if (cloudGenerateRequiresAck && !cloudGenerateAcknowledged) return;
+    setIsCloudGenerating(true);
+    setCloudGenerateError(null);
+
+    const acknowledging = cloudGenerateRequiresAck && cloudGenerateAcknowledged;
+    const attemptKey = acknowledging || !cloudGenerateAttemptKey ? crypto.randomUUID() : cloudGenerateAttemptKey;
+    setCloudGenerateAttemptKey(attemptKey);
+    setCloudGenerateRequiresAck(false);
+    setCloudGenerateAcknowledged(false);
+
+    try {
+      const result = await requestCloudGeneration(project.id, { attemptKey, mode: cloudGenerateMode, autoReview: cloudGenerateAutoReview });
+      if (result.status === "succeeded") {
+        setShowCloudGenerateDialog(false);
+        await onRefresh?.();
+        return;
+      }
+      if (result.status === "persistence-failed") {
+        setCloudGeneratePersistenceFailed(true);
+        setCloudGenerateRawImage({ base64: result.imageBase64, mimeType: result.mimeType });
+        setCloudGenerateError(result.error.message);
+        return;
+      }
+      setCloudGenerateRequiresAck(result.requiresAcknowledgement);
+      setCloudGenerateError(result.error.message);
+    } catch (error) {
+      if (error instanceof CloudGenerationRequestError) {
+        setCloudGenerateRequiresAck(error.requiresAcknowledgement);
+        setCloudGenerateError(error.message);
+      } else {
+        setCloudGenerateError("Не удалось выполнить генерацию из-за непредвиденной ошибки браузера.");
+      }
+    } finally {
+      setIsCloudGenerating(false);
+    }
+  }
+
+  async function retryCloudGenerateSave() {
+    if (!cloudGenerateAttemptKey || !cloudGenerateRawImage || isRetryingCloudGenerateSave) return;
+    setIsRetryingCloudGenerateSave(true);
+    setCloudGenerateError(null);
+    try {
+      const result = await requestCloudGeneration(project.id, {
+        attemptKey: cloudGenerateAttemptKey,
+        mode: cloudGenerateMode,
+        autoReview: cloudGenerateAutoReview,
+        retryImageBase64: cloudGenerateRawImage.base64,
+        retryMimeType: cloudGenerateRawImage.mimeType,
+      });
+      if (result.status === "succeeded") {
+        setCloudGeneratePersistenceFailed(false);
+        setShowCloudGenerateDialog(false);
+        await onRefresh?.();
+        return;
+      }
+      setCloudGenerateError(result.error.message);
+    } catch (error) {
+      setCloudGenerateError(error instanceof CloudGenerationRequestError ? error.message : "Повторное сохранение не удалось.");
+    } finally {
+      setIsRetryingCloudGenerateSave(false);
     }
   }
 
@@ -222,6 +396,32 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
     />
   ) : null;
 
+  const cloudGenerateDialog = showCloudGenerateDialog ? (
+    <CloudGenerateDialog
+      mode={cloudGenerateMode}
+      onModeChange={setCloudGenerateMode}
+      autoReview={cloudGenerateAutoReview}
+      onAutoReviewChange={setCloudGenerateAutoReview}
+      isGenerating={isCloudGenerating}
+      error={cloudGenerateError}
+      requiresAcknowledgement={cloudGenerateRequiresAck}
+      acknowledged={cloudGenerateAcknowledged}
+      onAcknowledgedChange={setCloudGenerateAcknowledged}
+      persistenceFailed={cloudGeneratePersistenceFailed}
+      isRetryingSave={isRetryingCloudGenerateSave}
+      onConfirm={runCloudGenerate}
+      onRetrySave={retryCloudGenerateSave}
+      onClose={closeCloudGenerate}
+    />
+  ) : null;
+
+  const generateButton = isCloudProject ? (
+    <Button type="button" size="sm" onClick={openCloudGenerate}>
+      <Sparkles className="h-4 w-4" />
+      Сгенерировать концепцию
+    </Button>
+  ) : null;
+
   if (view === "compare" && compareConcepts.length === 2) {
     return (
       <ConceptComparison
@@ -246,9 +446,27 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
           onAddFeedback={(comment) => addFeedback(detailConcept.id, comment)}
           onSelect={() => selectAndReturn(detailConcept.id)}
           onBack={() => setView("gallery")}
-          onCreateCorrection={isLocalProjectId(project.id) ? () => openCorrection(detailConcept) : undefined}
+          onCreateCorrection={isLocalProjectId(project.id) || isCloudProject ? () => openCorrection(detailConcept) : undefined}
         />
         {correctionDialog}
+        {cloudGenerateDialog}
+      </>
+    );
+  }
+
+  if (project.concepts.length === 0) {
+    return (
+      <>
+        <EmptyState
+          title="Концепции ещё не сгенерированы"
+          description={
+            isCloudProject
+              ? "Сгенерируйте первую концепцию по подтверждённому основному ракурсу и брифу этого проекта."
+              : "Заполните бриф и загрузите исходные материалы, чтобы AI Architect предложил варианты."
+          }
+          action={generateButton}
+        />
+        {cloudGenerateDialog}
       </>
     );
   }
@@ -256,6 +474,7 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
   return (
     <div className="flex flex-col gap-4">
       {reviewError ? <p role="alert" className="rounded-xl border border-border bg-surface-soft px-4 py-3 text-sm text-action">{reviewError}</p> : null}
+      {generateButton ? <div className="flex justify-end">{generateButton}</div> : null}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {project.concepts.map((concept) => (
           <ConceptCard
@@ -291,6 +510,7 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
       ) : null}
 
       {correctionDialog}
+      {cloudGenerateDialog}
     </div>
   );
 }

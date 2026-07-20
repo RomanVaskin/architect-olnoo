@@ -1,5 +1,6 @@
 import type { Feedback, Project } from "@/lib/types";
 import type { ServerProjectSummary } from "@/lib/server/project-repository";
+import type { DashboardSummary } from "@/lib/server/dashboard-repository";
 
 /**
  * Browser-side fetch wrappers for the /api/projects/* Route Handlers (see
@@ -75,6 +76,14 @@ export async function postSelectedConcept(projectId: string, conceptId: string |
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ conceptId }),
   });
+}
+
+export async function fetchDashboardSummary(): Promise<DashboardSummary> {
+  const body = await requestJson("/api/dashboard");
+  if (!isRecord(body) || !isRecord(body.summary)) {
+    throw new ServerProjectError("temporary-error", "Сервер вернул неполные данные дашборда.");
+  }
+  return body.summary as unknown as DashboardSummary;
 }
 
 export async function postConceptFeedback(projectId: string, conceptId: string, comment: string): Promise<Feedback> {

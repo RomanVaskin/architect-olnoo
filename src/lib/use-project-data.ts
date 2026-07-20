@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getProjectById } from "@/lib/mock-data";
 import { getLocalProject } from "@/lib/mvp-local-project-store";
 import { isDemoProjectId, isLocalProjectId, isServerProjectId } from "@/lib/project-id";
@@ -18,6 +18,15 @@ export interface ProjectDataState {
   project: Project | undefined;
   loading: boolean;
   error?: ProjectResolutionError;
+  /**
+   * Re-fetches the current project without a full page reload or losing the
+   * caller's workspace section (see specs Part 5 — used after cloud
+   * generation/correction/concept selection/feedback instead of
+   * `window.location.reload()`). A no-op for demo projects. Does not flip
+   * `loading` back to true — callers that want an in-place refresh keep
+   * their existing UI mounted while it resolves.
+   */
+  refresh: () => Promise<void>;
 }
 
 const LOCAL_UNAVAILABLE_ERROR: ProjectResolutionError = {
@@ -44,21 +53,21 @@ export function useProjectData(projectId: string): ProjectDataState {
     project: undefined,
     loading: !demoProject,
   });
+  const cancelledRef = useRef(false);
 
-  useEffect(() => {
-    if (demoProject) return undefined;
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets to a loading state when projectId changes, before the IndexedDB/network lookup below can resolve; mirrors src/lib/use-blob-url.ts.
-    setState({ project: undefined, loading: true });
+  const resolve = useCallback(
+    async (options: { showLoading: boolean }) => {
+      if (demoProject) return;
+      cancelledRef.current = false;
+      if (options.showLoading) setState({ project: undefined, loading: true });
 
-    async function resolve() {
       if (isLocalProjectId(projectId)) {
         try {
           const project = await getLocalProject(projectId);
-          if (cancelled) return;
+          if (cancelledRef.current) return;
           setState(project ? { project, loading: false } : { project: undefined, loading: false, error: LOCAL_UNAVAILABLE_ERROR });
         } catch {
-          if (!cancelled) setState({ project: undefined, loading: false, error: LOCAL_UNAVAILABLE_ERROR });
+          if (!cancelledRef.current) setState({ project: undefined, loading: false, error: LOCAL_UNAVAILABLE_ERROR });
         }
         return;
       }
@@ -66,9 +75,10 @@ export function useProjectData(projectId: string): ProjectDataState {
       if (isServerProjectId(projectId)) {
         try {
           const project = await fetchServerProject(projectId);
-          if (!cancelled) setState({ project, loading: false });
+          if (cancelledRef.current) return;
+          setState({ project, loading: false });
         } catch (error) {
-          if (cancelled) return;
+          if (cancelledRef.current) return;
           const resolved = error instanceof ServerProjectError
             ? { kind: mapServerErrorKind(error.kind), message: error.message }
             : { kind: "temporary-error" as const, message: "Не удалось связаться с сервером. Проверьте соединение и повторите попытку." };
@@ -77,17 +87,23 @@ export function useProjectData(projectId: string): ProjectDataState {
         return;
       }
 
-      if (!cancelled) setState({ project: undefined, loading: false, error: NOT_FOUND_ERROR });
-    }
+      if (!cancelledRef.current) setState({ project: undefined, loading: false, error: NOT_FOUND_ERROR });
+    },
+    [projectId, demoProject],
+  );
 
-    resolve();
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets to a loading state when projectId changes, before the IndexedDB/network lookup below can resolve; mirrors src/lib/use-blob-url.ts.
+    resolve({ showLoading: true });
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
     };
-  }, [projectId, demoProject]);
+  }, [resolve]);
 
-  if (demoProject) return { project: demoProject, loading: false };
-  return state;
+  const refresh = useCallback(() => resolve({ showLoading: false }), [resolve]);
+
+  if (demoProject) return { project: demoProject, loading: false, refresh: async () => {} };
+  return { ...state, refresh };
 }
 
 function mapServerErrorKind(kind: ServerProjectError["kind"]): ProjectResolutionErrorKind {

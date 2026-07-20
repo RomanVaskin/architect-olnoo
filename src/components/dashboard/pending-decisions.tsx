@@ -2,10 +2,10 @@ import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { ProjectStateBadge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
-import type { Concept, Project } from "@/lib/types";
+import type { DashboardPendingItem } from "@/lib/dashboard-merge";
 
 interface PendingDecisionsProps {
-  items: { concept: Concept; project: Project }[];
+  items: DashboardPendingItem[];
 }
 
 export function PendingDecisions({ items }: PendingDecisionsProps) {
@@ -15,19 +15,19 @@ export function PendingDecisions({ items }: PendingDecisionsProps) {
 
   return (
     <Card className="divide-y divide-border">
-      {items.map(({ concept, project }) => (
+      {items.map((item) => (
         <Link
-          key={concept.id}
-          href={`/projects/${project.id}/concepts`}
+          key={item.conceptId}
+          href={`/projects/${item.projectId}/concepts`}
           className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-surface-soft"
         >
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-ink">{concept.label}</p>
+            <p className="truncate text-sm font-medium text-ink">{item.conceptLabel}</p>
             <p className="truncate text-xs text-ink-secondary">
-              {project.name} · сгенерировано {formatDate(concept.createdAt)}
+              {item.projectName} · сгенерировано {formatDate(item.conceptCreatedAt)}
             </p>
           </div>
-          <ProjectStateBadge state={concept.state} />
+          <ProjectStateBadge state={item.conceptState} />
         </Link>
       ))}
     </Card>

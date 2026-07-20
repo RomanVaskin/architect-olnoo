@@ -204,7 +204,7 @@ function asSite(value: unknown): Site {
   };
 }
 
-function asBrief(value: unknown): ProjectBrief {
+export function asBrief(value: unknown): ProjectBrief {
   const record = isRecord(value) ? value : {};
   return {
     goal: typeof record.goal === "string" ? record.goal : "",

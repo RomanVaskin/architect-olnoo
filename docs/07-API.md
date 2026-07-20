@@ -1,6 +1,6 @@
 # API
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Status:** Draft — Route Handlers implemented, no public/external API yet
 **Last Updated:** 2026-07-20
 
@@ -27,6 +27,7 @@
 | `/api/projects/:projectId/files/:fileId/url` | GET | Перевыпускает подписанный URL файла (восстановление после истечения) | 401, 404, 503 |
 | `/api/projects/import/prepare` | POST | Готовит идемпотентный план переноса локального проекта (см. `specs/server-project-sync.md`) | 400, 401, 413, 503 |
 | `/api/projects/import/complete` | POST | Подтверждает загруженные файлы и сохраняет связанные метаданные | 400, 401, 503 |
+| `/api/dashboard` | GET | Агрегаты для реального дашборда `/`: концепции/проекты, ожидающие решения, последняя активность | 401, 503 |
 
 `404` намеренно не отличает «проект не существует» от «проект существует, но принадлежит другому пользователю» — RLS возвращает пустой результат в обоих случаях, и различать их в ответе означало бы утечку факта существования чужого проекта.
 
@@ -36,6 +37,17 @@
 |---|---|---|
 | `/api/concepts/generate` | POST | Платная генерация концепций (Gemini) для локального проекта |
 | `/api/concepts/correct` | POST | Платное исправление концепции по замечаниям Quality Gate (только локальные проекты) |
+
+## Концепции облачных проектов (`src/app/api/projects/[projectId]/concepts/`)
+
+См. `specs/cloud-generation-pipeline.md`. Тело запроса — JSON, а не FormData: клиент передаёт только `attemptKey` (UUID, идемпотентный ключ попытки), `mode` и (для generate) `autoReview` — исходные изображения и текст брифа сервер загружает сам из проекта.
+
+| Маршрут | Метод | Назначение | Коды ошибок |
+|---|---|---|---|
+| `/api/projects/:projectId/concepts/generate` | POST | Платная генерация одной концепции по подтверждённому Primary View и брифу проекта | 400, 401, 404, 409 (`ambiguous-attempt`, `retry-requires-bytes`), 422, 502, 503 |
+| `/api/projects/:projectId/concepts/:conceptId/correct` | POST | Платное исправление существующей облачной концепции по замечаниям Quality Gate | 400, 401, 404, 409, 422, 502, 503 |
+
+Ответ всегда содержит `status`: `"succeeded"` (с `concept: { conceptId, imageUrl }`), `"failed"` (с `requiresAcknowledgement` — неоднозначные/неизвестные по биллингу исходы) или `"persistence-failed"` (платный результат получен, но не сохранён — ответ включает `imageBase64`/`mimeType` для повтора сохранения без нового обращения к провайдеру).
 
 ## Содержание (TBD)
 

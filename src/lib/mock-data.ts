@@ -244,38 +244,3 @@ export const DEMO_PROJECT_IDS: ReadonlySet<string> = new Set(projects.map((proje
 export function getProjectById(id: string): Project | undefined {
   return projects.find((project) => project.id === id);
 }
-
-export function getConceptsAwaitingReview(): number {
-  return projects.reduce(
-    (count, project) => count + project.concepts.filter((c) => c.state === "awaiting-review").length,
-    0,
-  );
-}
-
-export function getApprovedConceptsCount(): number {
-  return projects.reduce(
-    (count, project) => count + project.concepts.filter((c) => c.state === "approved").length,
-    0,
-  );
-}
-
-export function getActiveProjectsCount(): number {
-  return projects.filter((project) => project.state !== "archived").length;
-}
-
-export function getRecentActivity(limit = 6) {
-  return projects
-    .flatMap((project) => project.activity.map((event) => ({ ...event, projectId: project.id, projectName: project.name })))
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, limit);
-}
-
-export function getPendingDecisions() {
-  return projects
-    .flatMap((project) =>
-      project.concepts
-        .filter((c) => c.state === "awaiting-review" || c.state === "needs-specialist-review")
-        .map((concept) => ({ concept, project })),
-    )
-    .sort((a, b) => new Date(b.concept.createdAt).getTime() - new Date(a.concept.createdAt).getTime());
-}

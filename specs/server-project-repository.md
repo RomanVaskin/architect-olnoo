@@ -1,6 +1,6 @@
 # Server Project Repository
 
-**Version:** 0.1.0
+**Version:** 0.2.0
 **Status:** Implemented — automated tests only, no live authenticated verification
 **Last Updated:** 2026-07-20
 
@@ -48,9 +48,9 @@
 
 Для облачных проектов (`isServerProjectId`) `src/lib/use-project-concept-review.ts` пишет через `POST /api/projects/:id/selected-concept` и `POST /api/projects/:id/feedback` вместо localStorage; для локальных/demo проектов поведение не изменилось (`src/lib/use-concept-review.ts`, localStorage). Выбор концепции — оптимистичный, откатывается при ошибке сервера; `author_name`/`author_user_id` отзыва берутся из сессии, а не от клиента.
 
-## Что осталось за рамками этой задачи
+## Создание новой концепции для облачных проектов
 
-Создание новой концепции (первичная генерация и исправление по Quality Gate) для облачных проектов не реализовано — обе операции по-прежнему пишут только в IndexedDB, поэтому кнопка «Создать исправленную версию» скрыта для не-локальных проектов (`src/components/workspace/concepts-workspace.tsx`). Серверный пайплайн генерации — следующий шаг, не часть этой спецификации.
+Первичная генерация и исправление по Quality Gate для облачных проектов реализованы отдельной спецификацией — см. `specs/cloud-generation-pipeline.md`. Кнопка «Создать исправленную версию» в `src/components/workspace/concepts-workspace.tsx` доступна и для локальных, и для облачных проектов; логика их персистентности не унифицирована (IndexedDB для локальных, Supabase Storage/Postgres для облачных) — каждая ветка использует свой собственный, независимо протестированный путь.
 
 ## Проверка
 

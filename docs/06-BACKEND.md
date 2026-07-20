@@ -1,7 +1,7 @@
 # Backend
 
-**Version:** 0.5.0
-**Status:** In Progress — Supabase is the primary data source for authenticated projects (architect-olnoo)
+**Version:** 0.6.0
+**Status:** In Progress — Supabase is the primary data source for authenticated projects (architect-olnoo); cloud generation/correction implemented
 **Last Updated:** 2026-07-20
 
 > Описывает архитектуру бэкенда: сервисы, слои приложения, паттерны и подход к обработке бизнес-логики.
@@ -33,9 +33,17 @@
 - Маршруты: `GET /api/projects`, `GET /api/projects/:id`, `POST /api/projects/:id/selected-concept`, `POST /api/projects/:id/feedback`, `GET /api/projects/:id/files/:fileId/url` — все проверяют сессию через `requireAuthenticatedUser` (см. `specs/authentication.md`) и отклоняют `local-development` bypass против реального backend.
 - Резолвер воркспейса (`src/lib/use-project-data.ts`) разрешает id в порядке demo → `local-*` (IndexedDB) → uuid (Supabase) и различает `not-found`, `authentication-required`, `temporary-error`, `local-unavailable`.
 
+## Серверный пайплайн генерации и исправления концепций
+
+`specs/cloud-generation-pipeline.md` описывает `POST /api/projects/:id/concepts/generate` и `POST /api/projects/:id/concepts/:conceptId/correct`: сервер сам загружает подтверждённый Primary View/опорные ракурсы проекта из приватного Storage под RLS-сессией пользователя (клиент передаёт только `attemptKey`/`mode`/`autoReview`, без изображений), обрезает их через `sharp` (`src/lib/server/image-crop.ts`, `src/lib/server/cloud-generation-source.ts`) и переиспользует существующий provider/model-registry/Reviewer через отдельный оркестратор (`src/lib/server/cloud-generation-runner.ts`), не трогая уже проверенные локальные маршруты. `src/lib/server/generation-attempt-repository.ts` реализует восстанавливаемое состояние платной попытки (`pre-dispatch → dispatched → provider-completed → completed`, плюс `failed`/`persistence-partial`) поверх уже применённой таблицы `generation_attempts` — миграция не потребовалась.
+
+## Реальный Dashboard
+
+`/` (`src/app/page.tsx`) больше не показывает demo-данные авторизованным пользователям. `src/lib/server/dashboard-repository.ts` агрегирует облачные концепции/проекты, ожидающие решения, и последнюю активность через RLS-сессию (`GET /api/dashboard`); `src/lib/dashboard-merge.ts` — чистая функция, объединяющая это с локальными несинхронизированными проектами из IndexedDB. Временная ошибка бэкенда показывается отдельным баннером и не превращается в пустой аккаунт; demo-проекты показываются только в честном пустом состоянии и явно подписаны «Демо».
+
 ## Следующий подэтап
 
-Чтение/запись серверных проектов реализованы. Осталось за рамками этой задачи: серверный пайплайн генерации/исправления концепций (сейчас работает только для локальных проектов), дашборд `/` всё ещё показывает только demo-данные.
+Осталось за рамками этой задачи: распределённый rate limiting и учёт стоимости AI-вызовов на пользователя; облачная генерация ограничена одним вариантом за попытку (`variantCount = 1`), в отличие от 1–3 у локального пайплайна.
 
 ## Будущее содержание
 
