@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/utils";
 import { PROJECT_STATE_LABELS } from "@/lib/types";
 import { ConceptVisual } from "./concept-visual";
 import type { Concept, Project } from "@/lib/types";
+import { GeometryVerificationLine } from "./geometry-verification-summary";
 
 interface ConceptComparisonProps {
   concepts: [Concept, Concept];
@@ -60,6 +61,16 @@ export function ConceptComparison({ concepts, project, selectedConceptId, onSele
                 </div>
 
                 <p className="text-sm text-ink">{concept.summary}</p>
+
+                <div className="rounded-xl border border-border bg-surface-soft p-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-ink-secondary">Quality Gate</p>
+                  <GeometryVerificationLine concept={concept} className="mt-2" />
+                  {concept.geometryVerification?.reviewedSourceViews ? (
+                    <p className="mt-1 text-xs text-ink-secondary">
+                      Учтено исходных ракурсов: {concept.geometryVerification.reviewedSourceViews}
+                    </p>
+                  ) : null}
+                </div>
 
                 <div className="border-t border-border pt-3">
                   <h4 className="text-xs font-medium uppercase tracking-wide text-ink-secondary">Что изменилось</h4>

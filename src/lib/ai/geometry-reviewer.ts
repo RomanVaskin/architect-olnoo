@@ -13,6 +13,7 @@ export const GEOMETRY_CHECK_KEYS: GeometryCheckKey[] = ["camera", "volumes", "ro
 
 export interface GeometryReviewRequest {
   primaryImage: SourceImageInput;
+  referenceImages?: SourceImageInput[];
   generatedImage: { data: Buffer; mimeType: string };
   constraints: ArchitecturalConstraints;
 }
@@ -44,7 +45,7 @@ interface RawCheck {
 }
 
 export function notRunGeometryReport(summary = "Автоматическую AI-проверку выполнить не удалось."): GeometryVerificationReport {
-  return { status: "not-run", confidence: 0, summary, checks: [], advisory: GEOMETRY_REVIEW_ADVISORY };
+  return { status: "not-run", confidence: 0, summary, checks: [], advisory: GEOMETRY_REVIEW_ADVISORY, reviewedSourceViews: 0 };
 }
 
 export function parseGeometryReview(rawText: string): GeometryVerificationReport {

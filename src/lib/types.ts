@@ -160,6 +160,8 @@ export interface GeometryVerificationReport {
   summary: string;
   checks: GeometryVerificationCheck[];
   advisory: string;
+  /** Primary View plus reference source views actually supplied to Reviewer. */
+  reviewedSourceViews?: number;
 }
 
 /**

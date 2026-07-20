@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
                 reviewer,
                 {
                   primaryImage: input.images[0],
+                  referenceImages: input.images.slice(1),
                   generatedImage: { data: Buffer.from(result.imageBase64, "base64"), mimeType: result.mimeType },
                   constraints: input.constraints,
                 },

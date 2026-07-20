@@ -16,6 +16,7 @@ import {
   type AnyStoredImageRecord,
 } from "./concept-image-codec";
 import { buildSourceRecords, type SourceFileRecordInput, type SourceViewRecordInput } from "./source-view-builder";
+import { conceptStateFromGeometryReview } from "./geometry-quality-gate";
 
 /**
  * Temporary MVP-only frontend persistence for projects created through the
@@ -275,7 +276,7 @@ export async function saveGeneratedConcept(projectId: string, item: GeneratedCon
     id: conceptId,
     label: item.label,
     createdAt: now,
-    state: "awaiting-review",
+    state: conceptStateFromGeometryReview(item.geometryVerification),
     summary: item.summary,
     changeExplanation: item.changeExplanation,
     generatedImage: { imageKey, mimeType: item.mimeType, mode: item.mode, warnings: [...item.warnings] },

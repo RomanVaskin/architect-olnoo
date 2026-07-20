@@ -42,6 +42,9 @@ export function GeometryVerificationPanel({ report }: { report?: GeometryVerific
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-medium text-ink">Предварительная AI-проверка геометрии</h3>
           <p className="mt-1 text-sm text-ink-secondary">{geometryVerificationLabel(report)}</p>
+          {report?.reviewedSourceViews ? (
+            <p className="mt-1 text-xs text-ink-secondary">Исходных ракурсов учтено: {report.reviewedSourceViews}</p>
+          ) : null}
           <p className="mt-1 text-xs font-medium text-action">{GEOMETRY_SPECIALIST_REVIEW_NOTE}</p>
         </div>
       </div>
