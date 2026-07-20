@@ -440,11 +440,7 @@ export async function recoverOrphanImage(imageKey: string): Promise<string> {
   return conceptId;
 }
 
-/** Reads a local project back, reattaching generated-image and source-image blobs in memory. */
-export async function getLocalProject(id: string): Promise<Project | undefined> {
-  const record = await getProjectRecord(id);
-  if (!record) return undefined;
-
+async function hydrateProjectRecord(record: StoredProject): Promise<Project> {
   const concepts: Concept[] = await Promise.all(
     record.concepts.map(async (concept): Promise<Concept> => {
       const { generatedImage, ...rest } = concept;
@@ -472,4 +468,18 @@ export async function getLocalProject(id: string): Promise<Project | undefined> 
   );
 
   return { ...record, sourceFiles, concepts };
+}
+
+/** Reads a local project back, reattaching generated-image and source-image blobs in memory. */
+export async function getLocalProject(id: string): Promise<Project | undefined> {
+  const record = await getProjectRecord(id);
+  return record ? hydrateProjectRecord(record) : undefined;
+}
+
+/** Every local project, for the /projects screen (see use-project-list.ts) — reuses the same blob-reattachment as getLocalProject. */
+export async function listLocalProjects(): Promise<Project[]> {
+  const db = await openDb();
+  const tx = db.transaction(PROJECTS_STORE, "readonly");
+  const records = await requestToPromise<StoredProject[]>(tx.objectStore(PROJECTS_STORE).getAll());
+  return Promise.all(records.map((record) => hydrateProjectRecord({ ...record, sourceViews: record.sourceViews ?? [] })));
 }

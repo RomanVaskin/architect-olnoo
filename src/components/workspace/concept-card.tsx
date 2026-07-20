@@ -8,6 +8,7 @@ import { GeometryVerificationLine } from "./geometry-verification-summary";
 
 interface ConceptCardProps {
   concept: Concept;
+  projectId?: string;
   isSelected?: boolean;
   isComparing?: boolean;
   compareDisabled?: boolean;
@@ -18,6 +19,7 @@ interface ConceptCardProps {
 
 export function ConceptCard({
   concept,
+  projectId,
   isSelected,
   isComparing,
   compareDisabled,
@@ -29,6 +31,7 @@ export function ConceptCard({
     <Card className={isSelected ? "flex flex-col overflow-hidden border-accent/60" : "flex flex-col overflow-hidden"}>
       <ConceptVisual
         concept={concept}
+        projectId={projectId}
         heightClassName="h-36"
         badge={
           isSelected ? (

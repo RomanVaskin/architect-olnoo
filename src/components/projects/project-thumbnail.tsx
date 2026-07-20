@@ -6,7 +6,13 @@ function hashSeed(seed: string): number {
 
 const variants = ["", "architect-scene--graphite", "architect-scene--wood", "architect-scene--sand"];
 
-export function ProjectThumbnail({ seed, className }: { seed: string; className?: string }) {
+/** `imageUrl` (a signed Storage URL, only ever set for server projects — see project-repository.ts) renders the real cover photo; otherwise falls back to the existing decorative placeholder keyed by `seed`. */
+export function ProjectThumbnail({ seed, imageUrl, className }: { seed: string; imageUrl?: string; className?: string }) {
+  if (imageUrl) {
+    // eslint-disable-next-line @next/next/no-img-element -- signed Storage URL, not a static asset
+    return <img src={imageUrl} alt="Превью проекта" className={cn("object-cover", className)} />;
+  }
+
   return (
     <div
       role="img"

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, CloudUpload, LoaderCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Check, CloudUpload, ExternalLink, LoaderCircle } from "lucide-react";
+import { Button, LinkButton } from "@/components/ui/button";
 import { getLocalProjectSync, saveLocalProjectSync, type LocalProjectSyncRecord } from "@/lib/mvp-local-project-store";
 import { ProjectSyncError, syncLocalProject } from "@/lib/project-sync";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -59,10 +59,18 @@ export function ProjectSyncControl({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <Button type="button" variant="secondary" onClick={sync} disabled={!configured || syncing} title={!configured ? "Сначала подключите Supabase" : undefined}>
-        {syncing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : synced ? <Check className="h-4 w-4 text-positive" /> : <CloudUpload className="h-4 w-4" />}
-        {syncing ? "Сохраняем…" : synced ? "Обновить облачную копию" : "Сохранить в облаке"}
-      </Button>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {synced && record?.serverProjectId ? (
+          <LinkButton href={`/projects/${record.serverProjectId}`} variant="secondary" size="sm">
+            <ExternalLink className="h-4 w-4" />
+            Открыть облачный проект
+          </LinkButton>
+        ) : null}
+        <Button type="button" variant="secondary" onClick={sync} disabled={!configured || syncing} title={!configured ? "Сначала подключите Supabase" : undefined}>
+          {syncing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : synced ? <Check className="h-4 w-4 text-positive" /> : <CloudUpload className="h-4 w-4" />}
+          {syncing ? "Сохраняем…" : synced ? "Обновить облачную копию" : "Сохранить в облаке"}
+        </Button>
+      </div>
       {!configured ? <span className="text-xs text-ink-secondary">Сначала подключите Supabase</span> : null}
       {message ? <span role={record?.status === "failed" ? "alert" : "status"} className="max-w-sm text-right text-xs text-ink-secondary">{message}</span> : null}
     </div>

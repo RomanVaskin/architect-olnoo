@@ -72,6 +72,8 @@ export interface SourceFile {
   dimensions?: SourceImageDimensions;
   /** Attached in memory only when a local project is read back from IndexedDB; never serialized. */
   imageBlob?: Blob;
+  /** Short-lived signed Storage URL — present only for server (Supabase) projects; see src/lib/server/project-assets.ts. */
+  imageUrl?: string;
 }
 
 /**
@@ -166,12 +168,18 @@ export interface GeometryVerificationReport {
 
 /**
  * Present only for concepts produced by the real generation pipeline (see
- * src/app/api/concepts/generate/route.ts). The blob is attached in-memory by
- * the local project store (src/lib/mvp-local-project-store.ts) when a concept
- * is read back from IndexedDB — it is never serialized to localStorage or JSON.
+ * src/app/api/concepts/generate/route.ts). Exactly one of `blob`/`url` is set:
+ * `blob` is attached in-memory by the local project store
+ * (src/lib/mvp-local-project-store.ts) when a concept is read back from
+ * IndexedDB and is never serialized to localStorage or JSON; `url` is a
+ * short-lived signed Storage URL populated for server (Supabase) projects
+ * (see src/lib/server/project-assets.ts).
  */
 export interface GeneratedConceptImage {
-  blob: Blob;
+  blob?: Blob;
+  url?: string;
+  /** project_files.id backing `url` — present only alongside `url`, used to re-sign an expired URL (see useRefreshableImageSrc). */
+  fileId?: string;
   mimeType: string;
   mode: GenerationMode;
   warnings: string[];

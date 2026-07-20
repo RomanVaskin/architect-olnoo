@@ -8,7 +8,8 @@ import { prepareConceptCorrection } from "@/lib/concept-correction";
 import { persistConceptsIndividually, type PersistableConcept } from "@/lib/concept-persistence";
 import { logGenerationDiagnostic } from "@/lib/generation-diagnostics";
 import { createGenerationAttempt, saveGeneratedConcept } from "@/lib/mvp-local-project-store";
-import { useConceptReview } from "@/lib/use-concept-review";
+import { useProjectConceptReview } from "@/lib/use-project-concept-review";
+import { isLocalProjectId } from "@/lib/project-id";
 import { ConceptCard } from "./concept-card";
 import { ConceptComparison } from "./concept-comparison";
 import { ConceptCorrectionDialog } from "./concept-correction-dialog";
@@ -18,11 +19,7 @@ import type { Concept, GenerationMode, Project } from "@/lib/types";
 type View = "gallery" | "compare" | "detail";
 
 export function ConceptsWorkspace({ project }: { project: Project }) {
-  const { selectedConceptId, feedback, selectConcept, addFeedback } = useConceptReview(
-    project.id,
-    project.selectedConceptId,
-    project.feedback,
-  );
+  const { selectedConceptId, feedback, selectConcept, addFeedback, error: reviewError } = useProjectConceptReview(project);
   const [view, setView] = useState<View>("gallery");
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -240,14 +237,16 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
   if (view === "detail" && detailConcept) {
     return (
       <>
+        {reviewError ? <p role="alert" className="rounded-xl border border-border bg-surface-soft px-4 py-3 text-sm text-action">{reviewError}</p> : null}
         <ConceptDetail
           concept={detailConcept}
+          projectId={project.id}
           isSelected={detailConcept.id === selectedConceptId}
           feedback={feedback.filter((item) => item.conceptId === detailConcept.id)}
           onAddFeedback={(comment) => addFeedback(detailConcept.id, comment)}
           onSelect={() => selectAndReturn(detailConcept.id)}
           onBack={() => setView("gallery")}
-          onCreateCorrection={() => openCorrection(detailConcept)}
+          onCreateCorrection={isLocalProjectId(project.id) ? () => openCorrection(detailConcept) : undefined}
         />
         {correctionDialog}
       </>
@@ -256,11 +255,13 @@ export function ConceptsWorkspace({ project }: { project: Project }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {reviewError ? <p role="alert" className="rounded-xl border border-border bg-surface-soft px-4 py-3 text-sm text-action">{reviewError}</p> : null}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {project.concepts.map((concept) => (
           <ConceptCard
             key={concept.id}
             concept={concept}
+            projectId={project.id}
             isSelected={concept.id === selectedConceptId}
             isComparing={compareIds.includes(concept.id)}
             compareDisabled={compareIds.length >= 2 && !compareIds.includes(concept.id)}

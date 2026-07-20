@@ -238,6 +238,9 @@ export const projects: Project[] = [
   },
 ];
 
+/** Explicit set of demo/mock project ids — see src/lib/project-id.ts, which resolvers and UI use to keep demo data from ever being mistaken for a real user project. */
+export const DEMO_PROJECT_IDS: ReadonlySet<string> = new Set(projects.map((project) => project.id));
+
 export function getProjectById(id: string): Project | undefined {
   return projects.find((project) => project.id === id);
 }

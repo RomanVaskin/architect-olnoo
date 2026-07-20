@@ -11,6 +11,7 @@ export default function SourceMaterialsPage() {
     <FileList
       files={project.sourceFiles}
       views={project.sourceViews}
+      projectId={project.id}
       emptyLabel="Загрузите фотографии, чертежи или документы существующего дома, чтобы начать работу."
     />
   );

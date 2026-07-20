@@ -14,6 +14,7 @@ import { canCreateCorrectedVersion } from "@/lib/concept-correction";
 
 interface ConceptDetailProps {
   concept: Concept;
+  projectId?: string;
   isSelected: boolean;
   feedback: Feedback[];
   onAddFeedback: (comment: string) => void;
@@ -22,7 +23,7 @@ interface ConceptDetailProps {
   onCreateCorrection?: () => void;
 }
 
-export function ConceptDetail({ concept, isSelected, feedback, onAddFeedback, onSelect, onBack, onCreateCorrection }: ConceptDetailProps) {
+export function ConceptDetail({ concept, projectId, isSelected, feedback, onAddFeedback, onSelect, onBack, onCreateCorrection }: ConceptDetailProps) {
   return (
     <div className="flex flex-col gap-6">
       <Button type="button" variant="secondary" size="sm" className="self-start" onClick={onBack}>
@@ -33,6 +34,7 @@ export function ConceptDetail({ concept, isSelected, feedback, onAddFeedback, on
       <Card className="overflow-hidden">
         <ConceptVisual
           concept={concept}
+          projectId={projectId}
           heightClassName="h-56"
           badge={
             isSelected ? (

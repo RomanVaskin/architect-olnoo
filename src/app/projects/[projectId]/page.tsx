@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { LinkButton } from "@/components/ui/button";
 import { PROJECT_LIFECYCLE_LABELS } from "@/lib/types";
 import { GeometryVerificationLine } from "@/components/workspace/geometry-verification-summary";
+import { isLocalProjectId, isServerProjectId } from "@/lib/project-id";
 
 export default function ProjectOverviewPage() {
   const { project } = useProjectContext();
@@ -22,18 +23,18 @@ export default function ProjectOverviewPage() {
     { label: "Выбрать основную концепцию", done: Boolean(project.selectedConceptId) },
   ];
 
-  // Wizard-created projects (see mvp-local-project-store.ts) only ever hold a
-  // real generated image or nothing at all — they must never show the
-  // decorative demo scene or claim geometry was preserved/verified.
-  const isLocalProject = project.id.startsWith("local-");
+  // Wizard-created and server (Supabase) projects only ever hold a real
+  // generated image or nothing at all — they must never show the decorative
+  // demo scene or claim geometry was preserved/verified.
+  const isRealProject = isLocalProjectId(project.id) || isServerProjectId(project.id);
   const latestGeneratedConcept = [...project.concepts].reverse().find((concept) => concept.generatedImage);
 
   return (
     <div className="flex flex-col gap-8">
-      {isLocalProject ? (
+      {isRealProject ? (
         latestGeneratedConcept ? (
           <Card className="overflow-hidden">
-            <ConceptVisual concept={latestGeneratedConcept} heightClassName="h-[260px] w-full sm:h-[340px]" />
+            <ConceptVisual concept={latestGeneratedConcept} projectId={project.id} heightClassName="h-[260px] w-full sm:h-[340px]" />
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
               <div>
                 <p className="text-sm font-medium text-ink">Последняя сгенерированная концепция «{latestGeneratedConcept.label}»</p>

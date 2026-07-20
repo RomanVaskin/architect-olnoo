@@ -5,13 +5,13 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectStateBadge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
 import { GENERATION_MODE_LABELS } from "@/lib/types";
-import { useConceptReview } from "@/lib/use-concept-review";
+import { useProjectConceptReview } from "@/lib/use-project-concept-review";
 import { ConceptVisual } from "./concept-visual";
 import type { Project } from "@/lib/types";
 import { GeometryVerificationLine, GeometryVerificationPanel } from "./geometry-verification-summary";
 
 export function SelectedConceptView({ project }: { project: Project }) {
-  const { selectedConceptId } = useConceptReview(project.id, project.selectedConceptId, project.feedback);
+  const { selectedConceptId } = useProjectConceptReview(project);
   const selected = project.concepts.find((concept) => concept.id === selectedConceptId);
 
   if (!selected) {
@@ -25,7 +25,7 @@ export function SelectedConceptView({ project }: { project: Project }) {
 
   return (
     <Card className="overflow-hidden p-0">
-      <ConceptVisual concept={selected} heightClassName="h-48" />
+      <ConceptVisual concept={selected} projectId={project.id} heightClassName="h-48" />
       <div className="p-5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>

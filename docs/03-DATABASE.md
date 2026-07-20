@@ -1,7 +1,7 @@
 # Database
 
-**Version:** 0.4.0
-**Status:** Applied and verified — architect-olnoo Supabase project
+**Version:** 0.5.0
+**Status:** Applied and verified — architect-olnoo Supabase project; read/write repository added, no schema change
 **Last Updated:** 2026-07-20
 
 > Описывает схему данных, модели и решения по хранению данных проекта Architect OLNOO.
@@ -38,6 +38,10 @@
 - Полный цикл синхронизации (prepare → прямая загрузка в Storage → complete) на синтетическом проекте с синтетическим изображением; повтор того же импорта не создаёт дублей ни в одной таблице и не меняет локальную IndexedDB-копию.
 
 Клиент и сервер поддерживают возобновляемый импорт: повтор использует те же `client_import_key` и Storage paths, не удаляет локальные данные и не запускает AI.
+
+## Чтение и запись поверх существующей схемы
+
+Существующая схема оказалась достаточной для серверного чтения проектов, приватных изображений и сохранения выбора концепции/отзыва — новая миграция не потребовалась. Реализация: `src/lib/server/project-repository.ts` (запросы + подписанные Storage URL) и `src/lib/server/project-row-mapping.ts` (маппинг строк в модель приложения), обе стороны через RLS-сессию пользователя. Подробности — `specs/server-project-repository.md`.
 
 ## Остаётся разработать
 

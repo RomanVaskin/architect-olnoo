@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useBlobUrl } from "@/lib/use-blob-url";
+import { useRefreshableImageSrc } from "@/lib/use-refreshable-image-src";
 import { GENERATION_MODE_LABELS } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import type { Concept } from "@/lib/types";
@@ -16,32 +17,39 @@ function sceneClassFor(conceptId: string) {
  * it full-resolution and a generation-mode badge) when one exists, or the
  * existing placeholder scene for mock concepts that were never generated.
  * Never implies the result is construction-ready or specialist-verified.
+ * `projectId` is only needed for server (Supabase) concepts, to recover from
+ * an expired signed URL — see useRefreshableImageSrc.
  */
 export function ConceptVisual({
   concept,
   heightClassName,
   badge,
+  projectId,
 }: {
   concept: Concept;
   heightClassName: string;
   badge?: ReactNode;
+  projectId?: string;
 }) {
   const blobUrl = useBlobUrl(concept.generatedImage?.blob);
+  const { src: refreshableUrl, onError } = useRefreshableImageSrc(projectId, concept.generatedImage?.fileId, concept.generatedImage?.url);
+  const displayUrl = concept.generatedImage?.url ? refreshableUrl : blobUrl;
 
   if (concept.generatedImage) {
     return (
       <div className={cn("relative overflow-hidden bg-icon-bg", heightClassName)}>
-        {blobUrl ? (
+        {displayUrl ? (
           <a
-            href={blobUrl}
+            href={displayUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="block h-full w-full"
             title="Открыть изображение в полном разрешении"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- object URL from IndexedDB blob, not a static asset */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- object URL from IndexedDB blob or a signed Storage URL, not a static asset */}
             <img
-              src={blobUrl}
+              src={displayUrl}
+              onError={concept.generatedImage.url ? onError : undefined}
               alt={`${concept.label} — сгенерированная архитектурная визуализация, автоматическая проверка геометрии не выполнена`}
               className="h-full w-full object-cover"
             />

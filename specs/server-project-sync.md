@@ -1,6 +1,6 @@
 # Server Project Sync
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Status:** Implemented and verified against architect-olnoo
 **Last Updated:** 2026-07-20
 
@@ -11,3 +11,7 @@
 Маршруты `POST /api/projects/import/prepare` и `POST /api/projects/import/complete` требуют подтверждённую Supabase-сессию и возвращают `503`, если Supabase не настроен.
 
 Проверено на реальном проекте `architect-olnoo` синтетическим локальным проектом с синтетическим изображением: prepare → прямая загрузка в Storage → complete, затем повтор того же импорта — без дублей ни в одной таблице, без изменения локальной IndexedDB-копии, без обращений к Gemini.
+
+## После синхронизации
+
+После успешного `complete` карточка проекта в воркспейсе (`src/components/workspace/project-sync-control.tsx`) получает действие «Открыть облачный проект», ведущее на `/projects/:serverProjectId`. Список `/projects` (см. `specs/server-project-repository.md`) исключает синхронизированный локальный проект из локального раздела — данные показываются только один раз, как облачная карточка; сама IndexedDB-запись при этом не удаляется и остаётся резервной копией. Повтор синхронизации использует тот же `client_import_key` (`localProjectId`) и поэтому продолжает тот же серверный проект, а не создаёт новый.

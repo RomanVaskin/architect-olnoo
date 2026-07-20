@@ -42,6 +42,7 @@ export function ConceptComparison({ concepts, project, selectedConceptId, onSele
             >
               <ConceptVisual
                 concept={concept}
+                projectId={project.id}
                 heightClassName="h-40"
                 badge={
                   isSelected ? (

@@ -29,7 +29,7 @@ export async function prepareConceptCorrection(
   concept: Concept,
   cropImage: CropImage = cropImageToBlob,
 ): Promise<PreparedCorrectionInput> {
-  if (!canCreateCorrectedVersion(concept) || !concept.generatedImage || !concept.sourceProvenance) {
+  if (!canCreateCorrectedVersion(concept) || !concept.generatedImage?.blob || !concept.sourceProvenance) {
     throw new Error("Для этой концепции нет конкретных замечаний Reviewer или исходных данных для исправления.");
   }
 

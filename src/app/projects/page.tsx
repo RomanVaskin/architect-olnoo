@@ -1,10 +1,14 @@
+"use client";
+
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { ProjectList } from "@/components/projects/project-list";
-import { projects } from "@/lib/mock-data";
+import { useProjectList } from "@/lib/use-project-list";
 
 export default function ProjectsPage() {
+  const projectList = useProjectList();
+
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
@@ -20,7 +24,7 @@ export default function ProjectsPage() {
           </Link>
         }
       />
-      <ProjectList projects={projects} />
+      <ProjectList {...projectList} />
     </div>
   );
 }

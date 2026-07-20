@@ -68,6 +68,10 @@ export function buildProjectImportPackage(project: Project): ProjectImportPackag
 
   const concepts: ImportedConcept[] = project.concepts.map(({ generatedImage, ...concept }) => {
     if (!generatedImage) return concept;
+    // Only local projects reach this function (checked above) and a local
+    // concept's image is always a Blob, never a signed url (that only
+    // exists for server-mapped concepts — see project-row-mapping.ts).
+    if (!generatedImage.blob) throw new Error(`Local concept ${concept.id} is missing its image blob.`);
     const field = `asset-${assets.length}`;
     const descriptor: ProjectImportAssetDescriptor = {
       field,
