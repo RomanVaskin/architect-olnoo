@@ -30,6 +30,7 @@ import { requestAndDecodeConcepts, reuseOrCreateDraft, extractRecoveryState, Gen
 import { persistConceptsIndividually, type PersistableConcept } from "@/lib/concept-persistence";
 import { logGenerationDiagnostic } from "@/lib/generation-diagnostics";
 import { fileKey, isRasterImage } from "@/lib/wizard-generation-selection";
+import { createWizardDraftSaver } from "@/lib/wizard-draft-save";
 import {
   buildConceptSourceProvenance,
   prepareGenerationViews,
@@ -87,6 +88,10 @@ export function NewProjectWizard() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // The saver's single-flight guarantee lives across renders: rapid repeated
+  // clicks on «Сохранить черновик» join one IndexedDB write instead of
+  // creating duplicate drafts (see src/lib/wizard-draft-save.ts).
+  const draftSaverRef = useRef(createWizardDraftSaver(createDraftProject));
 
   const [step, setStep] = useState(0);
   const [projectType, setProjectType] = useState("existing-house");
@@ -117,6 +122,9 @@ export function NewProjectWizard() {
   const [isRetryingSave, setIsRetryingSave] = useState(false);
   const [requiresRetryAcknowledgement, setRequiresRetryAcknowledgement] = useState(false);
   const [retryAcknowledged, setRetryAcknowledged] = useState(false);
+
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
 
   const [confirmedSourceViews, setConfirmedSourceViews] = useState<ConfirmedSourceView[]>([]);
   const [sourceDimensions, setSourceDimensions] = useState<Record<string, SourceImageDimensions>>({});
@@ -236,31 +244,9 @@ export function NewProjectWizard() {
     router.push(`/projects/${projectId}/concepts?generated=1${partial ? "&partial=1" : ""}`);
   }
 
-  async function confirmAndGenerate() {
-    if (isGenerating || persistenceFailed) return; // guard against duplicate submissions and re-billing after a lost save
-    if (requiresRetryAcknowledgement && !retryAcknowledged) return; // an unresolved risky-retry failure must be acknowledged first
-    if (!preparedPrimaryView) {
-      setGenerationError("Основной ракурс не подготовлен. Закройте окно и подтвердите ракурс ещё раз.");
-      return;
-    }
-    if (generationBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
-      setGenerationError(formatCombinedImageSizeError(generationBytes));
-      return;
-    }
-    setIsGenerating(true);
-    setGenerationError(null);
-    setPendingConcepts([]);
-    setPersistedKeys([]);
-    setRequiresRetryAcknowledgement(false);
-    setRetryAcknowledged(false);
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    let currentAttemptId: string | null = null;
-
-    // Reused verbatim if a draft project already exists for this wizard session (see persistDraft below) —
-    // only used to create a brand new draft on the very first attempt.
-    const draftInput: DraftProjectInput = {
+  /** The exact draft persisted for both final actions — free «Сохранить черновик» and the paid generation path reuse one shape. */
+  function buildDraftInput(): DraftProjectInput {
+    return {
       name: projectName.trim(),
       buildingType: "Частный дом",
       site: {
@@ -290,6 +276,57 @@ export function NewProjectWizard() {
         isPrimary: view.isPrimary,
       })),
     };
+  }
+
+  /**
+   * Free final action: persists the draft (project, source images, confirmed
+   * views, brief, constraints) to IndexedDB and opens its workspace. This
+   * path has no request dependency at all — it can never reach
+   * /api/concepts/generate, a cloud generation route, or any AI provider.
+   */
+  async function saveDraft() {
+    if (!canContinue || step !== steps.length - 1) return;
+    if (isSavingDraft || isGenerating || isPreparingPrimaryView) return;
+    setIsSavingDraft(true);
+    setDraftSaveError(null);
+    try {
+      const projectId = await draftSaverRef.current.save(draftProjectId, buildDraftInput());
+      setDraftProjectId(projectId);
+      router.push(`/projects/${projectId}`);
+      // isSavingDraft deliberately stays true after a successful save so the
+      // button cannot be clicked again while navigation is in progress.
+    } catch (error) {
+      logGenerationDiagnostic(draftProjectId ?? "draft", "persist-draft", error);
+      setDraftSaveError("Не удалось сохранить черновик в хранилище браузера. Платный запрос не отправлялся — попробуйте ещё раз.");
+      setIsSavingDraft(false);
+    }
+  }
+
+  async function confirmAndGenerate() {
+    if (isGenerating || persistenceFailed || isSavingDraft) return; // guard against duplicate submissions and re-billing after a lost save
+    if (requiresRetryAcknowledgement && !retryAcknowledged) return; // an unresolved risky-retry failure must be acknowledged first
+    if (!preparedPrimaryView) {
+      setGenerationError("Основной ракурс не подготовлен. Закройте окно и подтвердите ракурс ещё раз.");
+      return;
+    }
+    if (generationBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
+      setGenerationError(formatCombinedImageSizeError(generationBytes));
+      return;
+    }
+    setIsGenerating(true);
+    setGenerationError(null);
+    setPendingConcepts([]);
+    setPersistedKeys([]);
+    setRequiresRetryAcknowledgement(false);
+    setRetryAcknowledged(false);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    let currentAttemptId: string | null = null;
+
+    // Reused verbatim if a draft project already exists for this wizard session (see persistDraft below) —
+    // only used to create a brand new draft on the very first attempt.
+    const draftInput: DraftProjectInput = buildDraftInput();
 
     try {
       const result = await requestAndDecodeConcepts(
@@ -509,10 +546,28 @@ export function NewProjectWizard() {
         <Button variant="ghost" type="button" onClick={() => step === 0 ? router.push("/projects") : setStep(step - 1)}><ArrowLeft className="h-4 w-4" />{step === 0 ? "К проектам" : "Назад"}</Button>
         <div className="text-right">
           {!canContinue ? <p className="mb-2 text-xs text-ink-secondary">{step === 1 ? "Добавьте хотя бы один файл" : step === 2 ? "Дождитесь анализа и подтвердите основной ракурс" : step === 3 ? "Заполните название и подробно опишите цель" : step === 4 ? "Укажите обязательное изменение" : ""}</p> : null}
-          <Button type="button" disabled={!canContinue || isPreparingPrimaryView} onClick={continueFlow}>
-            {isPreparingPrimaryView ? "Подготовка ракурса…" : step === steps.length - 1 ? "Создать проект" : "Продолжить"}
-            <ArrowRight className="h-4 w-4" />
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {step === steps.length - 1 ? (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!canContinue || isSavingDraft || isGenerating || isPreparingPrimaryView}
+                onClick={saveDraft}
+              >
+                {isSavingDraft ? "Сохраняем черновик…" : "Сохранить черновик"}
+              </Button>
+            ) : null}
+            <Button type="button" disabled={!canContinue || isPreparingPrimaryView || isSavingDraft} onClick={continueFlow}>
+              {isPreparingPrimaryView ? "Подготовка ракурса…" : step === steps.length - 1 ? "Создать и сгенерировать" : "Продолжить"}
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+          {step === steps.length - 1 ? (
+            <p className="mt-2 text-xs text-ink-secondary">
+              «Сохранить черновик» — бесплатно и без обращения к AI; генерацию можно запустить позже из раздела «Концепции».
+            </p>
+          ) : null}
+          {draftSaveError ? <p role="alert" className="mt-2 text-xs text-action">{draftSaveError}</p> : null}
         </div>
       </div>
 

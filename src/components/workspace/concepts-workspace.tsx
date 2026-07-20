@@ -14,6 +14,8 @@ import { useProjectConceptReview } from "@/lib/use-project-concept-review";
 import { isLocalProjectId, isServerProjectId } from "@/lib/project-id";
 import { base64ToBlob } from "@/lib/base64";
 import { CloudGenerationRequestError, requestCloudCorrection, requestCloudGeneration } from "@/lib/cloud-generation-client";
+import { useLocalConceptGeneration } from "@/lib/use-local-concept-generation";
+import { GenerationConfirmDialog } from "@/components/projects/generation-confirm-dialog";
 import { ConceptCard } from "./concept-card";
 import { ConceptComparison } from "./concept-comparison";
 import { ConceptCorrectionDialog } from "./concept-correction-dialog";
@@ -53,6 +55,10 @@ export function ConceptsWorkspace({ project, onRefresh }: { project: Project; on
   const [cloudGeneratePersistenceFailed, setCloudGeneratePersistenceFailed] = useState(false);
   const [cloudGenerateRawImage, setCloudGenerateRawImage] = useState<{ base64: string; mimeType: string } | null>(null);
   const [isRetryingCloudGenerateSave, setIsRetryingCloudGenerateSave] = useState(false);
+
+  // Paid generation started later from a saved local draft (see specs — a
+  // draft saved without generation keeps the full local workflow available).
+  const localGeneration = useLocalConceptGeneration(project, onRefresh);
 
   function toggleCompare(conceptId: string) {
     setCompareIds((prev) => {
@@ -422,6 +428,52 @@ export function ConceptsWorkspace({ project, onRefresh }: { project: Project; on
     </Button>
   ) : null;
 
+  // Generation started later from a saved local draft — only offered when the
+  // stored materials are actually sufficient (exactly one Primary View with
+  // persisted bytes and dimensions), so the empty state never promises a
+  // generation that would fail before dispatch.
+  const localGenerateButton = localGeneration.canGenerate ? (
+    <Button type="button" size="sm" disabled={localGeneration.isPreparing} onClick={localGeneration.open}>
+      <Sparkles className="h-4 w-4" />
+      {localGeneration.isPreparing ? "Подготовка ракурса…" : "Сгенерировать концепцию"}
+    </Button>
+  ) : null;
+
+  const localGenerateDialog = localGeneration.isOpen && localGeneration.prepared ? (
+    <GenerationConfirmDialog
+      fileCount={localGeneration.prepared.views.length}
+      sourcePreviews={localGeneration.prepared.views.map((view) => ({
+        blob: view.file,
+        sourceFileName: view.sourceFileName,
+        role: view.role,
+        width: view.dimensions.width,
+        height: view.dimensions.height,
+        sizeBytes: view.payloadSizeBytes,
+        isPrimary: view.isPrimary,
+      }))}
+      mode={localGeneration.mode}
+      onModeChange={localGeneration.setMode}
+      variantCount={localGeneration.variantCount}
+      onVariantCountChange={localGeneration.setVariantCount}
+      autoReview={localGeneration.autoReview}
+      onAutoReviewChange={localGeneration.setAutoReview}
+      isGenerating={localGeneration.isGenerating}
+      error={localGeneration.error}
+      onConfirm={localGeneration.confirm}
+      onCancelGeneration={localGeneration.cancel}
+      onClose={localGeneration.close}
+      persistenceFailed={localGeneration.persistenceFailed}
+      isRetryingSave={localGeneration.isRetryingSave}
+      recoveryConcepts={localGeneration.pendingConcepts}
+      onRetrySave={localGeneration.retrySave}
+      attemptId={localGeneration.attemptId}
+      draftProjectId={project.id}
+      requiresRetryAcknowledgement={localGeneration.requiresRetryAcknowledgement}
+      retryAcknowledged={localGeneration.retryAcknowledged}
+      onRetryAcknowledgedChange={localGeneration.setRetryAcknowledged}
+    />
+  ) : null;
+
   if (view === "compare" && compareConcepts.length === 2) {
     return (
       <ConceptComparison
@@ -462,11 +514,19 @@ export function ConceptsWorkspace({ project, onRefresh }: { project: Project; on
           description={
             isCloudProject
               ? "Сгенерируйте первую концепцию по подтверждённому основному ракурсу и брифу этого проекта."
-              : "Заполните бриф и загрузите исходные материалы, чтобы AI Architect предложил варианты."
+              : localGeneration.canGenerate
+                ? "Материалы, основной ракурс и бриф уже сохранены в этом черновике. Генерация — платный запрос к внешнему AI-сервису; запустите её, когда будете готовы."
+                : "Заполните бриф и загрузите исходные материалы, чтобы AI Architect предложил варианты."
           }
-          action={generateButton}
+          action={generateButton ?? localGenerateButton}
         />
+        {localGeneration.prepareError ? (
+          <p role="alert" className="rounded-xl border border-border bg-surface-soft px-4 py-3 text-sm text-action">
+            {localGeneration.prepareError}
+          </p>
+        ) : null}
         {cloudGenerateDialog}
+        {localGenerateDialog}
       </>
     );
   }
@@ -511,6 +571,7 @@ export function ConceptsWorkspace({ project, onRefresh }: { project: Project; on
 
       {correctionDialog}
       {cloudGenerateDialog}
+      {localGenerateDialog}
     </div>
   );
 }
