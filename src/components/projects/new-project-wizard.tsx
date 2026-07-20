@@ -102,6 +102,7 @@ export function NewProjectWizard() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [mode, setMode] = useState<GenerationMode>("auto");
   const [variantCount, setVariantCount] = useState<1 | 3>(1);
+  const [autoReview, setAutoReview] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [preparedSourceViews, setPreparedSourceViews] = useState<PreparedPrimaryView[]>([]);
@@ -310,6 +311,7 @@ export function NewProjectWizard() {
             formData.append("mayChange", JSON.stringify(mayChange));
             formData.append("mode", mode);
             formData.append("variantCount", String(variantCount));
+            formData.append("autoReview", String(autoReview));
             return fetch("/api/concepts/generate", { method: "POST", body: formData, signal });
           },
           onDiagnostic: logGenerationDiagnostic,
@@ -530,6 +532,8 @@ export function NewProjectWizard() {
           onModeChange={setMode}
           variantCount={variantCount}
           onVariantCountChange={setVariantCount}
+          autoReview={autoReview}
+          onAutoReviewChange={setAutoReview}
           isGenerating={isGenerating}
           error={generationError}
           onConfirm={confirmAndGenerate}

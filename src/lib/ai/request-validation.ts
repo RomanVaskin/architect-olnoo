@@ -34,6 +34,7 @@ export interface ValidatedGenerationInput {
   constraints: ArchitecturalConstraints;
   mode: GenerationMode;
   variantCount: number;
+  autoReview: boolean;
 }
 
 /**
@@ -101,6 +102,12 @@ export async function validateGenerationForm(formData: FormData): Promise<Valida
     throw new GenerationError("validation", "Количество вариантов должно быть от 1 до 3.");
   }
 
+  const autoReviewRaw = formData.get("autoReview");
+  if (autoReviewRaw !== null && autoReviewRaw !== "true" && autoReviewRaw !== "false") {
+    throw new GenerationError("validation", "Параметр автоматической проверки имеет некорректное значение.");
+  }
+  const autoReview = autoReviewRaw === "true";
+
   const contexts = parseImageContexts(formData.get("imageContexts"), files.length);
   const images: SourceImageInput[] = await Promise.all(
     files.map(async (file, index) => ({
@@ -116,6 +123,7 @@ export async function validateGenerationForm(formData: FormData): Promise<Valida
     constraints: { goal, explicitChanges, mustKeep, mayChange },
     mode,
     variantCount: variantCountRaw,
+    autoReview,
   };
 }
 

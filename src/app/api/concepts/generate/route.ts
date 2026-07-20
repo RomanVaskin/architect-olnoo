@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GEOMETRY_VERIFICATION_NOTE } from "@/lib/types";
+import type { GeometryVerificationReport } from "@/lib/types";
 import { GenerationError } from "@/lib/ai/errors";
 import { validateGenerationForm } from "@/lib/ai/request-validation";
 import { resolveEffectiveMode, resolveModelSpec } from "@/lib/ai/model-registry";
 import { getProvider } from "@/lib/ai/provider";
 import { withGenerationSlot } from "@/lib/ai/concurrency";
+import { notRunGeometryReport, reviewGeometrySafely } from "@/lib/ai/geometry-reviewer";
+import { getGeometryReviewer } from "@/lib/ai/reviewer-provider";
 
 export const runtime = "nodejs";
 
@@ -15,6 +17,7 @@ export const runtime = "nodejs";
 // src/lib/ai/concurrency.ts, which is not a substitute for real rate limiting.
 
 const VARIANT_TIMEOUT_MS = 90_000;
+const REVIEW_TIMEOUT_MS = 45_000;
 
 interface VariantResponse {
   status: "succeeded" | "failed";
@@ -22,7 +25,7 @@ interface VariantResponse {
   mimeType?: string;
   imageBase64?: string;
   warnings: string[];
-  geometryVerificationNote: string;
+  geometryVerification: GeometryVerificationReport;
   error?: { code: string; message: string };
 }
 
@@ -42,6 +45,7 @@ export async function POST(request: NextRequest) {
   const modelSpec = resolveModelSpec(input.mode);
   const effectiveMode = resolveEffectiveMode(input.mode);
   const provider = getProvider(modelSpec);
+  const reviewer = getGeometryReviewer();
 
   const variants: VariantResponse[] = await Promise.all(
     Array.from({ length: input.variantCount }, (_, index) =>
@@ -59,13 +63,38 @@ export async function POST(request: NextRequest) {
             },
             controller.signal,
           );
+          clearTimeout(timer);
+
+          let geometryVerification = notRunGeometryReport(
+            input.autoReview
+              ? "Автоматическую AI-проверку выполнить не удалось."
+              : "Автоматическая AI-проверка отключена пользователем.",
+          );
+          if (input.autoReview) {
+            const reviewController = new AbortController();
+            const reviewTimer = setTimeout(() => reviewController.abort(), REVIEW_TIMEOUT_MS);
+            try {
+              geometryVerification = await reviewGeometrySafely(
+                reviewer,
+                {
+                  primaryImage: input.images[0],
+                  generatedImage: { data: Buffer.from(result.imageBase64, "base64"), mimeType: result.mimeType },
+                  constraints: input.constraints,
+                },
+                reviewController.signal,
+                logReviewFailure,
+              );
+            } finally {
+              clearTimeout(reviewTimer);
+            }
+          }
           return {
             status: "succeeded",
             mode: effectiveMode,
             mimeType: result.mimeType,
             imageBase64: result.imageBase64,
             warnings: result.warnings,
-            geometryVerificationNote: GEOMETRY_VERIFICATION_NOTE,
+            geometryVerification,
           };
         } catch (error) {
           const generationError = error instanceof GenerationError ? error : new GenerationError("provider-failure");
@@ -74,7 +103,7 @@ export async function POST(request: NextRequest) {
             status: "failed",
             mode: effectiveMode,
             warnings: [],
-            geometryVerificationNote: GEOMETRY_VERIFICATION_NOTE,
+            geometryVerification: notRunGeometryReport("Концепция не была создана, поэтому AI-проверка не выполнялась."),
             error: { code: generationError.code, message: generationError.userMessage },
           };
         } finally {
@@ -85,6 +114,12 @@ export async function POST(request: NextRequest) {
   );
 
   return NextResponse.json({ variants });
+}
+
+function logReviewFailure(error: unknown) {
+  const code = error instanceof Error ? error.name : "UnknownError";
+  // No raw message, model response, prompt or image bytes are logged.
+  console.warn("[concepts/review]", { code });
 }
 
 function errorResponse(error: unknown, status: number) {

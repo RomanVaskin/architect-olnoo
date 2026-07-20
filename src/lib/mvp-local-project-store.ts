@@ -2,6 +2,7 @@ import type {
   Concept,
   ConceptSourceProvenance,
   GenerationMode,
+  GeometryVerificationReport,
   Project,
   ProjectBrief,
   Site,
@@ -241,6 +242,7 @@ export interface GeneratedConceptInput {
   mode: GenerationMode;
   warnings: string[];
   sourceProvenance?: ConceptSourceProvenance;
+  geometryVerification?: GeometryVerificationReport;
 }
 
 /**
@@ -278,6 +280,7 @@ export async function saveGeneratedConcept(projectId: string, item: GeneratedCon
     changeExplanation: item.changeExplanation,
     generatedImage: { imageKey, mimeType: item.mimeType, mode: item.mode, warnings: [...item.warnings] },
     ...(item.sourceProvenance ? { sourceProvenance: structuredClone(item.sourceProvenance) } : {}),
+    ...(item.geometryVerification ? { geometryVerification: structuredClone(item.geometryVerification) } : {}),
   };
 
   const updated: StoredProject = {

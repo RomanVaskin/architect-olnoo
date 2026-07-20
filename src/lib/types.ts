@@ -132,6 +132,35 @@ export const GENERATION_MODE_LABELS: Record<GenerationMode, string> = {
  * the interface must never claim geometry constraints were verified automatically.
  */
 export const GEOMETRY_VERIFICATION_NOTE = "Автоматическая проверка геометрии не выполнена";
+export const GEOMETRY_SPECIALIST_REVIEW_NOTE = "Требует проверки специалиста";
+
+export type GeometryCheckKey = "camera" | "volumes" | "roof" | "openings" | "proportions";
+export type GeometryCheckStatus = "consistent" | "possible-deviation" | "uncertain";
+export type GeometryVerificationStatus =
+  | "no-obvious-deviations"
+  | "possible-deviations"
+  | "inconclusive"
+  | "not-run";
+
+export interface GeometryVerificationCheck {
+  key: GeometryCheckKey;
+  status: GeometryCheckStatus;
+  confidence: number;
+  explanation: string;
+}
+
+/**
+ * Advisory AI comparison of the Primary View and a generated concept. It is
+ * deliberately not an approval/certification and never replaces review by an
+ * architect or another qualified specialist.
+ */
+export interface GeometryVerificationReport {
+  status: GeometryVerificationStatus;
+  confidence: number;
+  summary: string;
+  checks: GeometryVerificationCheck[];
+  advisory: string;
+}
 
 /**
  * Present only for concepts produced by the real generation pipeline (see
@@ -175,6 +204,8 @@ export interface Concept {
   generatedImage?: GeneratedConceptImage;
   /** Present for concepts produced after the Phase 2 Primary View pipeline. */
   sourceProvenance?: ConceptSourceProvenance;
+  /** Present when Phase 4 automatic visual comparison was requested. */
+  geometryVerification?: GeometryVerificationReport;
 }
 
 export interface ConceptVersionEntry {

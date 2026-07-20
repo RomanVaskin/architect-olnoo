@@ -84,6 +84,22 @@ test("preserves one primary image followed by typed multi-view references", asyn
   ]);
 });
 
+test("accepts an explicit automatic-review choice and defaults to disabled when omitted", async () => {
+  const enabled = baseFormData();
+  enabled.append("images", makeImageFile("front.png", 16));
+  enabled.append("autoReview", "true");
+  assert.equal((await validateGenerationForm(enabled)).autoReview, true);
+
+  const omitted = baseFormData();
+  omitted.append("images", makeImageFile("front.png", 16));
+  assert.equal((await validateGenerationForm(omitted)).autoReview, false);
+
+  const invalid = baseFormData();
+  invalid.append("images", makeImageFile("front.png", 16));
+  invalid.append("autoReview", "yes");
+  await assert.rejects(() => validateGenerationForm(invalid), /автоматической проверки/);
+});
+
 test("rejects missing, duplicated, or reordered primary image context", async () => {
   for (const contexts of [
     [{ role: "front", purpose: "reference" }, { role: "side", purpose: "reference" }],

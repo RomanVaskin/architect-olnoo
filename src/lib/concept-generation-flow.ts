@@ -1,5 +1,5 @@
 import { base64ToBlob } from "./base64";
-import type { GenerationMode } from "@/lib/types";
+import type { GenerationMode, GeometryVerificationReport } from "@/lib/types";
 import type { GenerationStage } from "@/lib/generation-diagnostics";
 
 export interface RawGenerationVariant {
@@ -9,6 +9,7 @@ export interface RawGenerationVariant {
   imageBase64?: string;
   warnings: string[];
   error?: { code: string; message: string };
+  geometryVerification?: GeometryVerificationReport;
 }
 
 export interface DecodedVariant {
@@ -17,6 +18,7 @@ export interface DecodedVariant {
   mimeType: string;
   mode: GenerationMode;
   warnings: string[];
+  geometryVerification?: GeometryVerificationReport;
 }
 
 /** A failure at a specific stage of the paid-generation flow, with a message safe to show the user. */
@@ -210,6 +212,7 @@ export async function requestAndDecodeConcepts(
         mimeType: variant.mimeType ?? "image/png",
         mode: variant.mode as GenerationMode,
         warnings: variant.warnings,
+        geometryVerification: variant.geometryVerification,
       });
     } catch (error) {
       report("decode-image", error);

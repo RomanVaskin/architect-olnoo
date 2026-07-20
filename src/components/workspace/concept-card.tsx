@@ -2,9 +2,9 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ProjectStateBadge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
-import { GEOMETRY_VERIFICATION_NOTE } from "@/lib/types";
 import type { Concept } from "@/lib/types";
 import { ConceptVisual } from "./concept-visual";
+import { GeometryVerificationLine } from "./geometry-verification-summary";
 
 interface ConceptCardProps {
   concept: Concept;
@@ -45,7 +45,7 @@ export function ConceptCard({
         </div>
         <p className="text-sm text-ink-secondary">{concept.summary}</p>
         <p className="text-xs text-ink-secondary">Сгенерировано {formatDate(concept.createdAt)}</p>
-        {concept.generatedImage ? <p className="text-xs text-ink-secondary">{GEOMETRY_VERIFICATION_NOTE}</p> : null}
+        {concept.generatedImage ? <GeometryVerificationLine concept={concept} /> : null}
 
         {onToggleCompare || onSelect || onDetail ? (
           <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-3">

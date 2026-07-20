@@ -4,10 +4,11 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectStateBadge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
-import { GENERATION_MODE_LABELS, GEOMETRY_VERIFICATION_NOTE } from "@/lib/types";
+import { GENERATION_MODE_LABELS } from "@/lib/types";
 import { useConceptReview } from "@/lib/use-concept-review";
 import { ConceptVisual } from "./concept-visual";
 import type { Project } from "@/lib/types";
+import { GeometryVerificationLine, GeometryVerificationPanel } from "./geometry-verification-summary";
 
 export function SelectedConceptView({ project }: { project: Project }) {
   const { selectedConceptId } = useConceptReview(project.id, project.selectedConceptId, project.feedback);
@@ -36,13 +37,17 @@ export function SelectedConceptView({ project }: { project: Project }) {
         <p className="mt-4 text-sm text-ink">{selected.summary}</p>
         {selected.generatedImage ? (
           <p className="mt-2 text-xs text-ink-secondary">
-            Режим генерации: {GENERATION_MODE_LABELS[selected.generatedImage.mode]} · {GEOMETRY_VERIFICATION_NOTE}
+            Режим генерации: {GENERATION_MODE_LABELS[selected.generatedImage.mode]}
           </p>
         ) : null}
+        {selected.generatedImage ? <GeometryVerificationLine concept={selected} className="mt-1" /> : null}
         <div className="mt-4 border-t border-border pt-4">
           <h3 className="text-sm font-medium text-ink-secondary">Что изменилось и почему</h3>
           <p className="mt-2 text-sm text-ink">{selected.changeExplanation}</p>
         </div>
+      </div>
+      <div className="border-t border-border p-5">
+        <GeometryVerificationPanel report={selected.geometryVerification} />
       </div>
     </Card>
   );

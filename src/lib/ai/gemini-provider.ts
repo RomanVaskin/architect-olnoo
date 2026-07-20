@@ -1,7 +1,8 @@
-import { GoogleGenAI, FinishReason, Modality } from "@google/genai";
+import { FinishReason, Modality } from "@google/genai";
 import { buildArchitecturalPrompt } from "./prompt-builder";
 import { GenerationError } from "./errors";
 import type { GenerationRequest, GenerationResult, ImageGenerationProvider, ModelSpec, SourceImageInput } from "./types";
+import { getGeminiClient } from "./gemini-client";
 
 const REJECTED_FINISH_REASONS = new Set<FinishReason>([
   FinishReason.SAFETY,
@@ -10,8 +11,6 @@ const REJECTED_FINISH_REASONS = new Set<FinishReason>([
   FinishReason.SPII,
   FinishReason.RECITATION,
 ]);
-
-let client: GoogleGenAI | null = null;
 
 const ROLE_LABELS: Record<SourceImageInput["role"], string> = {
   front: "front facade",
@@ -33,20 +32,9 @@ export function buildGeminiImageParts(images: SourceImageInput[]) {
   ]);
 }
 
-function getClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new GenerationError("missing-api-key");
-  }
-  if (!client) {
-    client = new GoogleGenAI({ apiKey });
-  }
-  return client;
-}
-
 export const geminiProvider: ImageGenerationProvider = {
   async generate(spec: ModelSpec, request: GenerationRequest, signal: AbortSignal): Promise<GenerationResult> {
-    const ai = getClient();
+    const ai = getGeminiClient();
     const prompt = buildArchitecturalPrompt(request.constraints, request.variantIndex, request.variantCount, request.images);
 
     let response;

@@ -1,4 +1,4 @@
-import type { ConceptSourceProvenance, GenerationMode } from "@/lib/types";
+import type { ConceptSourceProvenance, GenerationMode, GeometryVerificationReport } from "@/lib/types";
 import { ConceptPersistError, type GenerationStage } from "./generation-diagnostics";
 
 export interface PersistableConcept {
@@ -11,6 +11,7 @@ export interface PersistableConcept {
   mode: GenerationMode;
   warnings: string[];
   sourceProvenance?: ConceptSourceProvenance;
+  geometryVerification?: GeometryVerificationReport;
 }
 
 /**

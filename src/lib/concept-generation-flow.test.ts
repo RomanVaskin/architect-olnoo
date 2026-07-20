@@ -16,6 +16,14 @@ function b64(text: string): string {
   return Buffer.from(text, "utf-8").toString("base64");
 }
 
+const REVIEW_REPORT = {
+  status: "inconclusive" as const,
+  confidence: 0.5,
+  summary: "Недостаточно данных",
+  checks: [],
+  advisory: "Требуется проверка специалиста",
+};
+
 test("the draft project (and attempt record) are persisted before the API request is sent", async () => {
   const calls: string[] = [];
   const deps: RequestAndDecodeDeps = {
@@ -31,7 +39,7 @@ test("the draft project (and attempt record) are persisted before the API reques
       calls.push("requestGeneration");
       // If persistDraft/persistAttempt hadn't already run, this assertion would trip mid-flow.
       assert.deepEqual(calls, ["persistDraft", "persistAttempt", "requestGeneration"]);
-      return jsonResponse({ variants: [{ status: "succeeded", mode: "auto", mimeType: "image/png", imageBase64: b64("img"), warnings: [] }] });
+      return jsonResponse({ variants: [{ status: "succeeded", mode: "auto", mimeType: "image/png", imageBase64: b64("img"), warnings: [], geometryVerification: REVIEW_REPORT }] });
     },
   };
 
@@ -41,6 +49,7 @@ test("the draft project (and attempt record) are persisted before the API reques
   assert.equal(result.projectId, "project-1");
   assert.equal(result.attemptId, "attempt-fixed");
   assert.equal(result.decoded.length, 1);
+  assert.deepEqual(result.decoded[0].geometryVerification, REVIEW_REPORT);
 });
 
 test("requestGeneration is never called if persisting the draft fails first", async () => {

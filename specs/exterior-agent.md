@@ -1,6 +1,6 @@
 # Exterior Agent
 
-**Version:** 0.3.0
+**Version:** 0.4.0
 **Status:** Draft
 **Last Updated:** 2026-07-18
 
@@ -58,7 +58,13 @@ Multipart FormData:
   "mimeType": "image/png",
   "imageBase64": "...",
   "warnings": [],
-  "geometryVerificationNote": "Автоматическая проверка геометрии не выполнена",
+  "geometryVerification": {
+    "status": "no-obvious-deviations | possible-deviations | inconclusive | not-run",
+    "confidence": 0.82,
+    "summary": "...",
+    "checks": [],
+    "advisory": "..."
+  },
   "error": { "code": "...", "message": "..." }
 }
 ```
@@ -74,5 +80,5 @@ Multipart FormData:
 ### Известные ограничения
 
 - Аутентификации и серверного rate limiting на уровне пользователя пока нет — см. `docs/09-TODO.md`.
-- Геометрическая проверка результата (Code Compliance / Reviewer Agent) не реализована.
+- Phase 4 добавляет отдельную предварительную AI-проверку геометрии после успешной генерации; она описана в `specs/reviewer-agent.md`, не является профессиональным заключением и не блокирует сохранение результата при собственной ошибке.
 - Изображения передаются в Gemini только как inline base64 — Files API (для больших/множественных файлов, обходящих лимит суммарного размера) пока не реализован, см. `docs/09-TODO.md`.

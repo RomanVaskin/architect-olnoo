@@ -1,13 +1,12 @@
 import { Bot, Paperclip, Send } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { GEOMETRY_VERIFICATION_NOTE } from "@/lib/types";
 import type { Project } from "@/lib/types";
+import { GeometryVerificationLine } from "./geometry-verification-summary";
 
 /**
  * Reflects only what's actually saved on `project` — no scripted
  * conversation, change list, or "geometry preserved" claim. Automatic
- * geometry verification does not exist yet (see GEOMETRY_VERIFICATION_NOTE),
- * so this panel must never imply otherwise.
+ * geometry review is advisory, so this panel must never imply professional approval.
  */
 export function AiPanel({ project }: { project: Project }) {
   const conceptCount = project.concepts.length;
@@ -32,8 +31,7 @@ export function AiPanel({ project }: { project: Project }) {
         ) : (
           <div className="rounded-xl border border-border p-3 text-sm leading-5 text-ink-secondary">
             <p>{conceptCount === 1 ? "Сохранена 1 концепция." : `Сохранено концепций: ${conceptCount}.`}</p>
-            <p className="mt-2 text-xs">{GEOMETRY_VERIFICATION_NOTE}</p>
-            <p className="mt-1 text-xs">Требует проверки специалиста</p>
+            <GeometryVerificationLine concept={project.concepts[project.concepts.length - 1]} className="mt-2" />
           </div>
         )}
       </div>

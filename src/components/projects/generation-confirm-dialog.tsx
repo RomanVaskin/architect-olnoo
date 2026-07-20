@@ -73,6 +73,8 @@ interface GenerationConfirmDialogProps {
   onModeChange: (mode: GenerationMode) => void;
   variantCount: 1 | 3;
   onVariantCountChange: (count: 1 | 3) => void;
+  autoReview: boolean;
+  onAutoReviewChange: (enabled: boolean) => void;
   isGenerating: boolean;
   error: string | null;
   onConfirm: () => void;
@@ -96,6 +98,8 @@ export function GenerationConfirmDialog({
   onModeChange,
   variantCount,
   onVariantCountChange,
+  autoReview,
+  onAutoReviewChange,
   isGenerating,
   error,
   onConfirm,
@@ -122,7 +126,7 @@ export function GenerationConfirmDialog({
         </h2>
         <p className="mt-2 text-sm leading-6 text-ink-secondary">
           Генерация использует платный внешний AI-сервис и обработает {fileCount} {fileCount === 1 ? "изображение" : "изображения"}.
-          Результат — концептуальная визуализация; геометрия дома не проверяется автоматически (проверка специалиста потребуется отдельно).
+          Результат — концептуальная визуализация; проверка специалиста потребуется независимо от результата AI-анализа.
         </p>
         <p className="mt-2 text-xs leading-5 text-ink-secondary">
           Черновик проекта сохраняется локально в начале процесса, до отправки платного запроса. Если генерацию отменить в браузере,
@@ -138,6 +142,23 @@ export function GenerationConfirmDialog({
             ))}
           </div>
         </div>
+
+        <label className="mt-5 flex items-start gap-3 rounded-xl border border-border bg-surface-soft p-4 text-sm text-ink-secondary">
+          <input
+            type="checkbox"
+            checked={autoReview}
+            disabled={controlsDisabled}
+            onChange={(event) => onAutoReviewChange(event.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-action)] disabled:opacity-50"
+          />
+          <span>
+            <strong className="font-medium text-ink">Выполнить предварительную AI-проверку геометрии</strong>
+            <span className="mt-1 block text-xs leading-5">
+              После каждого созданного варианта система отдельным AI-запросом сравнит его с основным ракурсом. Это может увеличить
+              стоимость и время обработки. Результат не является профессиональным заключением.
+            </span>
+          </span>
+        </label>
 
         <div className="mt-5">
           <p className="text-sm font-medium text-ink">Режим генерации</p>

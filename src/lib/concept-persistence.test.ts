@@ -13,6 +13,13 @@ function makeConcept(key: string): PersistableConcept {
     mimeType: "image/png",
     mode: "auto",
     warnings: [],
+    geometryVerification: {
+      status: "inconclusive",
+      confidence: 0.4,
+      summary: "Недостаточно данных",
+      checks: [],
+      advisory: "Нужен специалист",
+    },
   };
 }
 
@@ -33,6 +40,7 @@ test("persists each concept individually and reports which ones failed", async (
   assert.deepEqual(result.failedKeys, ["b"]);
   assert.deepEqual(result.conceptIdsByKey, { a: "concept-a", c: "concept-c" });
   assert.deepEqual(persisted, ["a", "c"]);
+  assert.equal(concepts[0].geometryVerification?.status, "inconclusive");
 });
 
 test("generated Blobs remain available after a persistence failure — the caller's concept list is untouched", async () => {

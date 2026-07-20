@@ -8,7 +8,8 @@ import { ConceptVisual } from "@/components/workspace/concept-visual";
 import { ProjectThumbnail } from "@/components/projects/project-thumbnail";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LinkButton } from "@/components/ui/button";
-import { GEOMETRY_VERIFICATION_NOTE, PROJECT_LIFECYCLE_LABELS } from "@/lib/types";
+import { PROJECT_LIFECYCLE_LABELS } from "@/lib/types";
+import { GeometryVerificationLine } from "@/components/workspace/geometry-verification-summary";
 
 export default function ProjectOverviewPage() {
   const { project } = useProjectContext();
@@ -36,7 +37,7 @@ export default function ProjectOverviewPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
               <div>
                 <p className="text-sm font-medium text-ink">Последняя сгенерированная концепция «{latestGeneratedConcept.label}»</p>
-                <p className="mt-1 text-xs text-ink-secondary">{GEOMETRY_VERIFICATION_NOTE} · Требует проверки специалиста</p>
+                <GeometryVerificationLine concept={latestGeneratedConcept} className="mt-1" />
               </div>
               <LinkButton href={`/projects/${project.id}/concepts`} variant="secondary" size="sm">
                 Все концепции
