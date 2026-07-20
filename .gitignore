@@ -76,3 +76,8 @@ htmlcov/
 logs/
 tmp/
 temp/
+
+# ==============================
+# Supabase CLI local state
+# ==============================
+supabase/.temp/

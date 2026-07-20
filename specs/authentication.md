@@ -1,7 +1,7 @@
 # Authentication
 
-**Version:** 0.1.0
-**Status:** Implemented — Supabase connection pending
+**Version:** 0.2.0
+**Status:** Implemented and verified against architect-olnoo
 **Last Updated:** 2026-07-20
 
 > Описывает вход пользователей и защиту платных AI-маршрутов до подключения серверного хранения проектов.
@@ -35,4 +35,4 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
 ## Следующий шаг
 
-Отдельно рассмотреть и утвердить подготовленную миграцию `supabase/migrations/202607200001_backend_foundation.sql`. До её применения IndexedDB остаётся временным хранилищем данных проекта.
+Миграция `supabase/migrations/202607200001_backend_foundation.sql` применена к `architect-olnoo`. Signup/signin проверены выделенными тестовыми аккаунтами; IndexedDB остаётся резервным локальным хранилищем.

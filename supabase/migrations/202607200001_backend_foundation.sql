@@ -1,5 +1,112 @@
--- REVIEW REQUIRED: this migration is intentionally not applied automatically.
 -- Backend Foundation 2: multi-tenant project data and private project assets.
+-- Applied to architect-olnoo (ref iaomlfkcbjeqpgnbpwxs) on 2026-07-20 after
+-- review; see 202607200002_fix_workspace_select_visibility.sql for a
+-- follow-up fix found during verification.
+
+-- ============================================================================
+-- LEGACY SCHEMA CLEANUP
+--
+-- The target project (architect-olnoo, ref iaomlfkcbjeqpgnbpwxs) already
+-- contained an unrelated, empty schema from prior unrelated scaffolding
+-- (organizations/profiles/tasks/project_comments/project_objects/etc.),
+-- including a `public.projects` and `public.project_files` that collide by
+-- name with the tables this migration creates below. Verified immediately
+-- before this migration was authored:
+--   - all 11 legacy tables: 0 rows
+--   - auth.users: 0 rows (no user has ever signed up on this project)
+--   - storage bucket 'project-files': 0 objects
+--   - no views depend on any of these tables
+-- Full schema-only backup (columns, constraints, indexes, policies,
+-- functions) captured at supabase/backups/pre-cleanup-architect-olnoo-20260720.sql
+-- before this migration was written.
+--
+-- Drop order below is chosen so every statement succeeds without CASCADE:
+-- each table is dropped only after every legacy table that references it
+-- (via foreign key) has already been dropped. A table's own indexes,
+-- triggers, and RLS policies are removed automatically as part of DROP
+-- TABLE (they belong to the table); that is intrinsic Postgres behavior,
+-- not the CASCADE keyword, and every policy so removed is enumerated here
+-- for transparency:
+--   design_briefs:        design_briefs_select/insert/update/delete
+--   project_comments:     project_comments_select/insert/update/delete
+--   project_files:        project_files_select/insert/update/delete
+--   project_members:      project_members_select/insert/update/delete
+--   tasks:                tasks_select/insert/update/delete
+--   project_versions:     project_versions_select/insert/update/delete
+--   project_objects:      project_objects_select/insert/update/delete
+--   projects:              projects_select/insert/update/delete
+--   organization_members: organization_members_select/insert/update/delete
+--   organizations:        organizations_select/insert/update/delete
+--   profiles:              profiles_select/update
+-- and each table's own `<table>_updated_at` trigger (all backed by the
+-- public.set_updated_at() function dropped near the end).
+--
+-- Two dependencies are NOT owned by any of the 11 tables above and must be
+-- dropped explicitly, in this exact order, before the tables/functions they
+-- reference:
+--   1. `on_auth_user_created` lives on auth.users (not being dropped) and
+--      calls public.handle_new_user(), which inserts into public.profiles.
+--      Left in place, it would silently break every future signup (test
+--      accounts included) the moment profiles is gone. Dropped first, then
+--      its function.
+--   2. Four RLS policies on storage.objects (project_storage_select/
+--      insert/update/delete) reference can_manage_project(), is_project_
+--      member(), and try_uuid() and are scoped to `bucket_id =
+--      'project-files'` only (verified via pg_policies; they cannot match
+--      any other bucket, including the new 'project-assets' bucket this
+--      migration creates). Dropped explicitly before those functions.
+--
+-- The empty 'project-files' storage bucket itself is deliberately NOT
+-- dropped here: Supabase enforces storage.protect_delete() on
+-- storage.buckets, which raises on any plain SQL DELETE and requires the
+-- Storage API instead, which in turn requires an elevated administrative
+-- key this project's own security policy says never to use. Bucket
+-- removal is intentionally left as a separate, manual, non-transactional
+-- step for the project owner (Supabase Dashboard -> Storage -> delete
+-- 'project-files'), decoupled from this migration. It does not conflict
+-- with anything created below.
+--
+-- Recovery if this transaction fails partway: it cannot leave partial
+-- state. The whole file below (cleanup + creation) is sent to Postgres as
+-- one multi-statement query, which Postgres treats as a single implicit
+-- transaction (no BEGIN/COMMIT is used, and nothing here requires running
+-- outside a transaction, e.g. no CONCURRENTLY). Any failure at any
+-- statement rolls back every statement before it, leaving the database
+-- exactly as it was pre-migration; simply fix the cause and re-run
+-- `supabase db push --linked`.
+
+drop trigger on_auth_user_created on auth.users;
+drop function public.handle_new_user();
+
+drop policy project_storage_select on storage.objects;
+drop policy project_storage_insert on storage.objects;
+drop policy project_storage_update on storage.objects;
+drop policy project_storage_delete on storage.objects;
+
+drop table public.design_briefs;
+drop table public.project_comments;
+drop table public.project_files;
+drop table public.project_members;
+drop table public.tasks;
+drop table public.project_versions;
+drop table public.project_objects;
+drop table public.projects;
+drop table public.organization_members;
+drop table public.organizations;
+drop table public.profiles;
+
+drop function public.handle_new_organization();
+drop function public.can_create_project(uuid);
+drop function public.can_manage_org(uuid);
+drop function public.can_manage_project(uuid);
+drop function public.is_org_member(uuid);
+drop function public.is_project_member(uuid);
+drop function public.set_updated_at();
+drop function public.shares_org(uuid);
+drop function public.try_uuid(text);
+
+-- ============================================================================
+-- ARCHITECT OLNOO SCHEMA
 
 create extension if not exists pgcrypto;
 create schema if not exists private;

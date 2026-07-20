@@ -1,11 +1,13 @@
 # Server Project Sync
 
-**Version:** 0.1.0
-**Status:** Implemented — remote activation pending
+**Version:** 0.2.0
+**Status:** Implemented and verified against architect-olnoo
 **Last Updated:** 2026-07-20
 
 Локальный проект копируется в PostgreSQL и приватный Storage только после явного действия пользователя «Сохранить в облаке». Сервер сначала проверяет manifest и создаёт idempotent import plan. Затем браузер загружает каждый файл напрямую в приватный Supabase Storage под пользовательской RLS-сессией, без передачи больших файлов через Next.js/Vercel. После этого сервер проверяет наличие, размер и MIME-тип объектов и только затем сохраняет связанные метаданные. Manifest также обязан содержать ровно один Primary View, если исходные ракурсы присутствуют.
 
 Каждая запись использует локальный id как project-scoped `client_import_key`, а Storage path детерминирован. Поэтому повтор после частичного сбоя продолжает тот же импорт без дубликатов и без AI-запросов. Удаление локального проекта не входит в процесс синхронизации: IndexedDB остаётся резервной копией.
 
-Маршруты `POST /api/projects/import/prepare` и `POST /api/projects/import/complete` требуют подтверждённую Supabase-сессию и возвращают `503`, пока Supabase или рассмотренная миграция не подключены. Удалённая миграция этим этапом не применяется.
+Маршруты `POST /api/projects/import/prepare` и `POST /api/projects/import/complete` требуют подтверждённую Supabase-сессию и возвращают `503`, если Supabase не настроен.
+
+Проверено на реальном проекте `architect-olnoo` синтетическим локальным проектом с синтетическим изображением: prepare → прямая загрузка в Storage → complete, затем повтор того же импорта — без дублей ни в одной таблице, без изменения локальной IndexedDB-копии, без обращений к Gemini.
