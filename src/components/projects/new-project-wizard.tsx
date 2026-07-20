@@ -29,13 +29,12 @@ import { MAX_TOTAL_INLINE_IMAGE_BYTES, formatCombinedImageSizeError } from "@/li
 import { requestAndDecodeConcepts, reuseOrCreateDraft, extractRecoveryState, GenerationFlowError } from "@/lib/concept-generation-flow";
 import { persistConceptsIndividually, type PersistableConcept } from "@/lib/concept-persistence";
 import { logGenerationDiagnostic } from "@/lib/generation-diagnostics";
+import { fileKey, isRasterImage } from "@/lib/wizard-generation-selection";
 import {
-  MAX_GENERATION_IMAGES,
-  fileKey,
-  isRasterImage,
-  reconcileGenerationSelection,
-  toggleGenerationSelection,
-} from "@/lib/wizard-generation-selection";
+  buildConceptSourceProvenance,
+  preparePrimaryViewForGeneration,
+  type PreparedPrimaryView,
+} from "@/lib/primary-view-generation";
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -105,7 +104,9 @@ export function NewProjectWizard() {
   const [variantCount, setVariantCount] = useState<1 | 3>(1);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
-  const [generationKeys, setGenerationKeys] = useState<string[]>([]);
+  const [preparedPrimaryView, setPreparedPrimaryView] = useState<PreparedPrimaryView | null>(null);
+  const [isPreparingPrimaryView, setIsPreparingPrimaryView] = useState(false);
+  const [sourceViewError, setSourceViewError] = useState<string | null>(null);
 
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
@@ -121,22 +122,19 @@ export function NewProjectWizard() {
   const handleSourceViewsChange = useCallback((change: SourceViewsChange) => {
     setConfirmedSourceViews(change.views);
     setSourceDimensions(change.dimensionsByFileKey);
+    setPreparedPrimaryView(null);
+    setSourceViewError(null);
   }, []);
 
-  const rasterFiles = useMemo(() => files.filter(isRasterImage), [files]);
-  const generationFiles = useMemo(
-    () => rasterFiles.filter((file) => generationKeys.includes(fileKey(file))),
-    [rasterFiles, generationKeys],
-  );
-  const generationBytes = useMemo(() => generationFiles.reduce((sum, file) => sum + file.size, 0), [generationFiles]);
+  const generationBytes = preparedPrimaryView?.payloadSizeBytes ?? 0;
 
   const canContinue = useMemo(() => {
     if (step === 0) return projectType === "existing-house";
     if (step === 1) return files.length > 0;
-    if (step === 2) return true; // Source Views is a review step — nothing is required to move past it
+    if (step === 2) return confirmedSourceViews.length > 0 && !isPreparingPrimaryView;
     if (step === 3) return projectName.trim().length > 1 && goal.trim().length > 15;
     return mustKeep.length > 0 && explicitChanges.trim().length > 5;
-  }, [explicitChanges, files.length, goal, mustKeep.length, projectName, projectType, step]);
+  }, [confirmedSourceViews.length, explicitChanges, files.length, goal, isPreparingPrimaryView, mustKeep.length, projectName, projectType, step]);
 
   function addFiles(event: ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.target.files ?? []);
@@ -164,7 +162,8 @@ export function NewProjectWizard() {
     }
 
     setFiles(unique);
-    setGenerationKeys((prev) => reconcileGenerationSelection(unique, prev));
+    setPreparedPrimaryView(null);
+    setSourceViewError(null);
     setFileError("");
     event.target.value = "";
   }
@@ -172,11 +171,8 @@ export function NewProjectWizard() {
   function removeFile(file: File) {
     const next = files.filter((item) => item !== file);
     setFiles(next);
-    setGenerationKeys((prev) => reconcileGenerationSelection(next, prev));
-  }
-
-  function toggleGeneration(file: File) {
-    setGenerationKeys((prev) => toggleGenerationSelection(prev, fileKey(file)));
+    setPreparedPrimaryView(null);
+    setSourceViewError(null);
   }
 
   function toggleConstraint(value: string, group: "must" | "may") {
@@ -185,20 +181,31 @@ export function NewProjectWizard() {
     setList(list.includes(value) ? list.filter((item) => item !== value) : [...list, value]);
   }
 
-  function continueFlow() {
+  async function continueFlow() {
     if (!canContinue) return;
     if (step < steps.length - 1) {
       setStep(step + 1);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    if (generationFiles.length === 0) {
-      setFileError("Для генерации нужна хотя бы одна выбранная фотография в формате JPEG, PNG или WebP (PDF пока не поддерживается моделью).");
-      setStep(1);
-      return;
+    setIsPreparingPrimaryView(true);
+    setSourceViewError(null);
+    try {
+      const prepared = await preparePrimaryViewForGeneration(files, confirmedSourceViews, sourceDimensions);
+      if (prepared.payloadSizeBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
+        setSourceViewError(formatCombinedImageSizeError(prepared.payloadSizeBytes));
+        setStep(2);
+        return;
+      }
+      setPreparedPrimaryView(prepared);
+      setGenerationError(null);
+      setShowConfirmDialog(true);
+    } catch (error) {
+      setSourceViewError(error instanceof Error ? error.message : "Не удалось подготовить основной ракурс для генерации.");
+      setStep(2);
+    } finally {
+      setIsPreparingPrimaryView(false);
     }
-    setGenerationError(null);
-    setShowConfirmDialog(true);
   }
 
   function cancelGeneration() {
@@ -229,6 +236,10 @@ export function NewProjectWizard() {
   async function confirmAndGenerate() {
     if (isGenerating || persistenceFailed) return; // guard against duplicate submissions and re-billing after a lost save
     if (requiresRetryAcknowledgement && !retryAcknowledged) return; // an unresolved risky-retry failure must be acknowledged first
+    if (!preparedPrimaryView) {
+      setGenerationError("Основной ракурс не подготовлен. Закройте окно и подтвердите ракурс ещё раз.");
+      return;
+    }
     if (generationBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
       setGenerationError(formatCombinedImageSizeError(generationBytes));
       return;
@@ -282,10 +293,11 @@ export function NewProjectWizard() {
         {
           // Reuse the draft created by an earlier attempt in this session instead of creating a new one on every retry.
           persistDraft: () => reuseOrCreateDraft(draftProjectId, () => createDraftProject(draftInput)),
-          persistAttempt: (projectId, attempt) => createGenerationAttempt(projectId, attempt),
+          persistAttempt: (projectId, attempt) =>
+            createGenerationAttempt(projectId, attempt, buildConceptSourceProvenance(projectId, preparedPrimaryView)),
           requestGeneration: (signal) => {
             const formData = new FormData();
-            generationFiles.forEach((file) => formData.append("images", file));
+            formData.append("images", preparedPrimaryView.file);
             formData.append("goal", goal);
             formData.append("explicitChanges", explicitChanges);
             formData.append("mustKeep", JSON.stringify(mustKeep));
@@ -308,6 +320,7 @@ export function NewProjectWizard() {
         label: `Концепция ${CONCEPT_LABELS[index] ?? index + 1}`,
         summary: goal.trim(),
         changeExplanation: explicitChanges.trim() || goal.trim(),
+        sourceProvenance: buildConceptSourceProvenance(result.projectId, preparedPrimaryView),
       }));
       setPendingConcepts(concepts);
 
@@ -431,35 +444,13 @@ export function NewProjectWizard() {
             <span className="mt-2 text-sm text-ink-secondary">JPG, PNG, WebP или PDF · до 20 МБ · максимум 12 файлов</span>
           </button>
           {fileError ? <p role="alert" className="mt-3 text-sm text-action">{fileError}</p> : null}
-          {rasterFiles.length > MAX_GENERATION_IMAGES ? (
-            <p className="mt-3 rounded-xl border border-border bg-surface-soft px-4 py-3 text-sm text-ink-secondary">
-              Для одной генерации можно использовать не более {MAX_GENERATION_IMAGES} фотографий — отмечено {generationFiles.length} из {MAX_GENERATION_IMAGES}. Остальные фотографии останутся в проекте как материалы, но не будут отправлены в модель.
-            </p>
-          ) : null}
-          {generationBytes > MAX_TOTAL_INLINE_IMAGE_BYTES ? (
-            <p role="alert" className="mt-3 text-sm text-action">{formatCombinedImageSizeError(generationBytes)}</p>
-          ) : null}
           {files.length > 0 ? (
             <div className="mt-5 divide-y divide-border rounded-2xl border border-border">
               {files.map((file) => {
-                const showGenerationToggle = isRasterImage(file) && rasterFiles.length > MAX_GENERATION_IMAGES;
-                const isSelectedForGeneration = generationKeys.includes(fileKey(file));
                 return (
                   <div key={fileKey(file)} className="flex items-center gap-3 px-4 py-3">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-ink-secondary">{file.type === "application/pdf" ? <FileText className="h-4 w-4" /> : <FileImage className="h-4 w-4" />}</span>
                     <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-ink">{file.name}</span><span className="text-xs text-ink-secondary">{formatFileSize(file.size)}</span></span>
-                    {showGenerationToggle ? (
-                      <label className="flex shrink-0 items-center gap-2 text-xs text-ink-secondary">
-                        <input
-                          type="checkbox"
-                          checked={isSelectedForGeneration}
-                          disabled={!isSelectedForGeneration && generationKeys.length >= MAX_GENERATION_IMAGES}
-                          onChange={() => toggleGeneration(file)}
-                          className="h-4 w-4 accent-[var(--color-action)]"
-                        />
-                        Для генерации
-                      </label>
-                    ) : null}
                     <button type="button" onClick={() => removeFile(file)} aria-label={`Удалить ${file.name}`} className="flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-soft hover:text-ink"><Trash2 className="h-4 w-4" /></button>
                   </div>
                 );
@@ -477,6 +468,7 @@ export function NewProjectWizard() {
             предложит разделить её на отдельные ракурсы для проверки.
           </p>
           <SourceViewsStep files={files} onChange={handleSourceViewsChange} />
+          {sourceViewError ? <p role="alert" className="mt-3 text-sm text-action">{sourceViewError}</p> : null}
         </section>
       ) : null}
 
@@ -501,21 +493,32 @@ export function NewProjectWizard() {
             <fieldset className="rounded-2xl border border-border p-5"><legend className="px-2 text-sm font-medium text-ink">Можно изменить</legend><div className="mt-2 grid gap-3">{DEFAULT_MAY_CHANGE.map((item) => <label key={item} className="flex items-start gap-3 text-sm text-ink"><input type="checkbox" checked={mayChange.includes(item)} onChange={() => toggleConstraint(item, "may")} className="mt-0.5 h-4 w-4 accent-[var(--color-action)]" /><span>{item}</span></label>)}</div></fieldset>
           </div>
           <label className="mt-6 grid gap-2 text-sm font-medium text-ink">Что нужно изменить обязательно?<textarea value={explicitChanges} onChange={(event) => setExplicitChanges(event.target.value)} placeholder="Например: заменить облицовочный кирпич светлой штукатуркой и добавить деревянные панели" className="min-h-28 resize-y rounded-xl border border-border bg-surface px-4 py-3 font-normal leading-6 outline-none placeholder:text-ink-secondary focus:border-ink/30" /></label>
-          <div className="mt-6 rounded-2xl bg-surface-soft p-5"><p className="text-sm font-medium text-ink">После запуска</p><p className="mt-1 text-sm leading-6 text-ink-secondary">AI проанализирует {files.length} {files.length === 1 ? "файл" : "файлов"}, зафиксирует ограничения и подготовит несколько вариантов концепции. Источники и принятые решения сохранятся в проекте.</p></div>
+          <div className="mt-6 rounded-2xl bg-surface-soft p-5"><p className="text-sm font-medium text-ink">После запуска</p><p className="mt-1 text-sm leading-6 text-ink-secondary">AI получит только выбранный основной ракурс, зафиксированные ограничения и пожелания, а затем подготовит варианты концепции. Все исходные файлы, ракурсы и происхождение результата сохранятся в проекте.</p></div>
         </section>
       ) : null}
 
       <div className="flex items-center justify-between border-t border-border pt-6">
         <Button variant="ghost" type="button" onClick={() => step === 0 ? router.push("/projects") : setStep(step - 1)}><ArrowLeft className="h-4 w-4" />{step === 0 ? "К проектам" : "Назад"}</Button>
         <div className="text-right">
-          {!canContinue ? <p className="mb-2 text-xs text-ink-secondary">{step === 1 ? "Добавьте хотя бы один файл" : step === 3 ? "Заполните название и подробно опишите цель" : step === 4 ? "Укажите обязательное изменение" : ""}</p> : null}
-          <Button type="button" disabled={!canContinue} onClick={continueFlow}>{step === steps.length - 1 ? "Создать проект" : "Продолжить"}<ArrowRight className="h-4 w-4" /></Button>
+          {!canContinue ? <p className="mb-2 text-xs text-ink-secondary">{step === 1 ? "Добавьте хотя бы один файл" : step === 2 ? "Дождитесь анализа и подтвердите основной ракурс" : step === 3 ? "Заполните название и подробно опишите цель" : step === 4 ? "Укажите обязательное изменение" : ""}</p> : null}
+          <Button type="button" disabled={!canContinue || isPreparingPrimaryView} onClick={continueFlow}>
+            {isPreparingPrimaryView ? "Подготовка ракурса…" : step === steps.length - 1 ? "Создать проект" : "Продолжить"}
+            <ArrowRight className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
       {showConfirmDialog ? (
         <GenerationConfirmDialog
-          fileCount={generationFiles.length}
+          fileCount={1}
+          sourcePreview={{
+            blob: preparedPrimaryView!.file,
+            sourceFileName: preparedPrimaryView!.sourceFileName,
+            role: preparedPrimaryView!.role,
+            width: preparedPrimaryView!.dimensions.width,
+            height: preparedPrimaryView!.dimensions.height,
+            sizeBytes: preparedPrimaryView!.payloadSizeBytes,
+          }}
           mode={mode}
           onModeChange={setMode}
           variantCount={variantCount}

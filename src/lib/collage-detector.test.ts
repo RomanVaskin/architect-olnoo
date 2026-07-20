@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectCollageViews, type PixelBuffer } from "./collage-detector";
+import { detectCollageViews, splitIntoEqualVerticalViews, type PixelBuffer } from "./collage-detector";
 
 /**
  * No image file was supplied with this task, so the 450×800 fixture required
@@ -122,4 +122,20 @@ test("never modifies the pixel buffer it was given", () => {
 test("throws on a malformed buffer instead of silently reading out of bounds", () => {
   const badPixels: PixelBuffer = { width: 10, height: 10, data: new Uint8ClampedArray(10) };
   assert.throws(() => detectCollageViews(badPixels));
+});
+
+test("manual three-way fallback covers a 450x800 collage exactly without overlap", () => {
+  const views = splitIntoEqualVerticalViews(450, 800, 3);
+
+  assert.deepEqual(views.map((view) => view.crop), [
+    { x: 0, y: 0, width: 450, height: 267 },
+    { x: 0, y: 267, width: 450, height: 266 },
+    { x: 0, y: 533, width: 450, height: 267 },
+  ]);
+  assert.equal(views.reduce((sum, view) => sum + view.crop.height, 0), 800);
+});
+
+test("manual split rejects invalid dimensions instead of creating empty crops", () => {
+  assert.throws(() => splitIntoEqualVerticalViews(450, 2, 3));
+  assert.throws(() => splitIntoEqualVerticalViews(0, 800, 2));
 });

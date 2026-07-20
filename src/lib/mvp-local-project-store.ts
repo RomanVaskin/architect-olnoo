@@ -1,5 +1,6 @@
 import type {
   Concept,
+  ConceptSourceProvenance,
   GenerationMode,
   Project,
   ProjectBrief,
@@ -212,10 +213,19 @@ export async function createDraftProject(input: DraftProjectInput): Promise<stri
  * request goes out, so a lost or failed response can still be traced back
  * to the project it was billed against.
  */
-export async function createGenerationAttempt(projectId: string, attemptId: string): Promise<void> {
+export async function createGenerationAttempt(
+  projectId: string,
+  attemptId: string,
+  sourceProvenance?: ConceptSourceProvenance,
+): Promise<void> {
   const db = await openDb();
   const tx = db.transaction(ATTEMPTS_STORE, "readwrite");
-  tx.objectStore(ATTEMPTS_STORE).put({ attemptId, projectId, createdAt: new Date().toISOString() });
+  tx.objectStore(ATTEMPTS_STORE).put({
+    attemptId,
+    projectId,
+    createdAt: new Date().toISOString(),
+    ...(sourceProvenance ? { sourceProvenance: structuredClone(sourceProvenance) } : {}),
+  });
   await new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -230,6 +240,7 @@ export interface GeneratedConceptInput {
   mimeType: string;
   mode: GenerationMode;
   warnings: string[];
+  sourceProvenance?: ConceptSourceProvenance;
 }
 
 /**
@@ -266,6 +277,7 @@ export async function saveGeneratedConcept(projectId: string, item: GeneratedCon
     summary: item.summary,
     changeExplanation: item.changeExplanation,
     generatedImage: { imageKey, mimeType: item.mimeType, mode: item.mode, warnings: [...item.warnings] },
+    ...(item.sourceProvenance ? { sourceProvenance: structuredClone(item.sourceProvenance) } : {}),
   };
 
   const updated: StoredProject = {

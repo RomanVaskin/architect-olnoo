@@ -36,7 +36,7 @@ export interface BuiltSourceRecords {
  * SourceView records that get written to the project. Throws if a view
  * references a file with no image bytes, or if the confirmed views don't
  * have exactly one Primary View — both would silently corrupt the
- * "only the Primary View is generated next phase" guarantee, so they're
+ * "only the Primary View is generated" guarantee, so they're
  * rejected here rather than persisted.
  */
 export function buildSourceRecords(

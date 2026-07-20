@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GENERATION_MODE_LABELS, type GenerationMode } from "@/lib/types";
+import { SOURCE_VIEW_ROLE_LABELS, type SourceViewRole } from "@/lib/types";
 import { useBlobUrl } from "@/lib/use-blob-url";
 
 const MODES: GenerationMode[] = ["auto", "fast", "balanced", "maximum-quality"];
@@ -37,6 +38,14 @@ function ConceptDownloadLink({ concept }: { concept: RecoveryConcept }) {
 
 interface GenerationConfirmDialogProps {
   fileCount: number;
+  sourcePreview: {
+    blob: Blob;
+    sourceFileName: string;
+    role: SourceViewRole;
+    width: number;
+    height: number;
+    sizeBytes: number;
+  };
   mode: GenerationMode;
   onModeChange: (mode: GenerationMode) => void;
   variantCount: 1 | 3;
@@ -59,6 +68,7 @@ interface GenerationConfirmDialogProps {
 
 export function GenerationConfirmDialog({
   fileCount,
+  sourcePreview,
   mode,
   onModeChange,
   variantCount,
@@ -78,6 +88,7 @@ export function GenerationConfirmDialog({
   retryAcknowledged,
   onRetryAcknowledgedChange,
 }: GenerationConfirmDialogProps) {
+  const sourcePreviewUrl = useBlobUrl(sourcePreview.blob);
   const controlsDisabled = isGenerating || persistenceFailed;
   const confirmBlockedByAcknowledgement = requiresRetryAcknowledgement && !retryAcknowledged;
 
@@ -95,6 +106,25 @@ export function GenerationConfirmDialog({
           Черновик проекта сохраняется локально в начале процесса, до отправки платного запроса. Если генерацию отменить в браузере,
           запрос к AI-провайдеру мог уже уйти — отмена не гарантирует, что оплата не будет выставлена.
         </p>
+
+        <div className="mt-5 overflow-hidden rounded-xl border border-border bg-surface-soft">
+          {sourcePreviewUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- exact in-memory File that will be sent in FormData
+            <img
+              src={sourcePreviewUrl}
+              alt={`Основной ракурс из файла ${sourcePreview.sourceFileName}`}
+              className="max-h-56 w-full bg-icon-bg object-contain"
+            />
+          ) : (
+            <div className="h-40 w-full bg-icon-bg" aria-hidden />
+          )}
+          <div className="px-4 py-3">
+            <p className="text-sm font-medium text-ink">Именно это изображение будет отправлено AI-провайдеру</p>
+            <p className="mt-1 text-xs leading-5 text-ink-secondary">
+              {SOURCE_VIEW_ROLE_LABELS[sourcePreview.role]} · {sourcePreview.width}×{sourcePreview.height} px · {Math.max(1, Math.ceil(sourcePreview.sizeBytes / 1024))} КБ
+            </p>
+          </div>
+        </div>
 
         <div className="mt-5">
           <p className="text-sm font-medium text-ink">Режим генерации</p>

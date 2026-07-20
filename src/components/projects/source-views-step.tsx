@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { decodeImagePixels } from "@/lib/crop-image";
-import { detectCollageViews, type CollageDetectionResult, type CropRect } from "@/lib/collage-detector";
+import { detectCollageViews, splitIntoEqualVerticalViews, type CollageDetectionResult, type CropRect } from "@/lib/collage-detector";
 import { isRasterImage, fileKey } from "@/lib/wizard-generation-selection";
 import { SOURCE_VIEW_ROLE_LABELS, type SourceImageDimensions, type SourceViewRole } from "@/lib/types";
 import { CroppedImagePreview } from "@/components/ui/cropped-image-preview";
@@ -51,6 +51,33 @@ export function SourceViewsStep({ files, onChange }: { files: File[]; onChange: 
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [roles, setRoles] = useState<Record<string, SourceViewRole>>({});
   const [primaryKey, setPrimaryKey] = useState<string | null>(null);
+  const [manualSplitCounts, setManualSplitCounts] = useState<Record<string, 1 | 2 | 3>>({});
+
+  const viewsForDetection = useCallback((detection: FileDetection) => {
+    const manualCount = manualSplitCounts[detection.key] ?? 1;
+    if (detection.result?.isFallback && detection.dimensions && manualCount > 1) {
+      return splitIntoEqualVerticalViews(detection.dimensions.width, detection.dimensions.height, manualCount);
+    }
+    return detection.result?.views ?? [];
+  }, [manualSplitCounts]);
+
+  function changeManualSplit(fileKeyValue: string, count: 1 | 2 | 3) {
+    setManualSplitCounts((prev) => ({ ...prev, [fileKeyValue]: count }));
+    setEnabled((prev) => {
+      const next = { ...prev };
+      for (let index = 0; index < count; index++) next[viewKey(fileKeyValue, index)] = true;
+      return next;
+    });
+    setRoles((prev) => {
+      const next = { ...prev };
+      for (let index = 0; index < count; index++) {
+        const key = viewKey(fileKeyValue, index);
+        if (!(key in next)) next[key] = index === 0 ? "front" : "other";
+      }
+      return next;
+    });
+    setPrimaryKey((prev) => (prev?.startsWith(`${fileKeyValue}::`) ? viewKey(fileKeyValue, 0) : prev));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -99,7 +126,7 @@ export function SourceViewsStep({ files, onChange }: { files: File[]; onChange: 
     let order = 0;
     for (const detection of activeDetections) {
       if (detection.dimensions) dimensionsByFileKey[detection.key] = detection.dimensions;
-      detection.result?.views.forEach((view, index) => {
+      viewsForDetection(detection).forEach((view, index) => {
         const key = viewKey(detection.key, index);
         if (!enabled[key]) return;
         views.push({ fileKey: detection.key, crop: view.crop, order: order++, role: roles[key] ?? "other", isPrimary: primaryKey === key });
@@ -109,7 +136,7 @@ export function SourceViewsStep({ files, onChange }: { files: File[]; onChange: 
     // exactly one primary among the confirmed (enabled) views, never zero.
     if (views.length > 0 && !views.some((view) => view.isPrimary)) views[0].isPrimary = true;
     onChange({ views, dimensionsByFileKey });
-  }, [rasterFiles, detections, enabled, roles, primaryKey, onChange]);
+  }, [rasterFiles, detections, enabled, roles, primaryKey, onChange, viewsForDetection]);
 
   if (rasterFiles.length === 0) {
     return (
@@ -122,9 +149,9 @@ export function SourceViewsStep({ files, onChange }: { files: File[]; onChange: 
   return (
     <div className="mt-6 grid gap-6">
       <p className="rounded-xl border border-border bg-surface-soft px-4 py-3 text-sm text-ink-secondary">
-        В следующей MVP-фазе в генерацию будет передан только отмеченный ниже{" "}
-        <strong className="font-medium text-ink">основной ракурс (Primary View)</strong>. Остальные включённые ракурсы сохраняются
-        в проекте как материалы, но пока не генерируются.
+        В генерацию будет передан только отмеченный ниже{" "}
+        <strong className="font-medium text-ink">основной ракурс (Primary View)</strong>. Перед запуском вы увидите точное
+        изображение, которое получит AI-провайдер. Остальные ракурсы сохраняются в проекте как исходные материалы.
       </p>
       {rasterFiles.map((file) => {
         const key = fileKey(file);
@@ -144,16 +171,33 @@ export function SourceViewsStep({ files, onChange }: { files: File[]; onChange: 
           );
         }
         const { result } = detection;
+        const displayedViews = viewsForDetection(detection);
+        const manualSplitCount = manualSplitCounts[key] ?? 1;
         return (
           <Card key={key} className="p-4">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-ink">{file.name}</p>
               <span className="text-xs text-ink-secondary">
-                {result.isFallback ? "Коллаж не обнаружен — один ракурс" : `Обнаружено ракурсов: ${result.views.length}`}
+                {result.isFallback && manualSplitCount === 1 ? "Коллаж не обнаружен — один ракурс" : `${manualSplitCount > 1 ? "Выбрано" : "Обнаружено"} ракурсов: ${displayedViews.length}`}
               </span>
             </div>
+            {result.isFallback ? (
+              <label className="mt-4 grid max-w-xs gap-2 text-xs font-medium text-ink">
+                Вертикальных ракурсов в файле
+                <select
+                  value={manualSplitCount}
+                  onChange={(event) => changeManualSplit(key, Number(event.target.value) as 1 | 2 | 3)}
+                  className="rounded-lg border border-border bg-surface px-3 py-2 text-sm font-normal text-ink outline-none"
+                >
+                  <option value={1}>Один ракурс</option>
+                  <option value={2}>Разделить на 2 равные части</option>
+                  <option value={3}>Разделить на 3 равные части</option>
+                </select>
+                <span className="font-normal leading-5 text-ink-secondary">Используйте ручное разделение, если коллаж собран без заметных полос между фотографиями.</span>
+              </label>
+            ) : null}
             <div className="mt-4 grid gap-4 sm:grid-cols-3">
-              {result.views.map((view, order) => {
+              {displayedViews.map((view, order) => {
                 const vk = viewKey(key, order);
                 const isEnabled = enabled[vk] ?? true;
                 return (
@@ -196,7 +240,9 @@ export function SourceViewsStep({ files, onChange }: { files: File[]; onChange: 
                       />
                       Основной ракурс (Primary View)
                     </label>
-                    <p className="mt-2 text-[11px] text-ink-secondary">Уверенность: {Math.round(view.confidence * 100)}%</p>
+                    <p className="mt-2 text-[11px] text-ink-secondary">
+                      {manualSplitCount > 1 ? "Разделено вручную" : `Уверенность: ${Math.round(view.confidence * 100)}%`}
+                    </p>
                   </div>
                 );
               })}

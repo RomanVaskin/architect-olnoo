@@ -99,9 +99,8 @@ export interface SourceViewCropRect {
 }
 
 /**
- * Only the Primary View (`isPrimary: true`) is sent to generation in the
- * next MVP phase — this phase only reviews, enables/disables, and persists
- * views; it never calls the generation API.
+ * Only the Primary View (`isPrimary: true`) is sent to generation. Other
+ * confirmed views remain project materials and provenance references.
  */
 export interface SourceView {
   id: string;
@@ -147,6 +146,21 @@ export interface GeneratedConceptImage {
   warnings: string[];
 }
 
+/** Exact Primary View payload used for a generated concept. */
+export interface ConceptSourceProvenance {
+  sourceFileId: string;
+  sourceViewId: string;
+  sourceFileName: string;
+  role: SourceViewRole;
+  crop: SourceViewCropRect;
+  payload: {
+    mimeType: string;
+    width: number;
+    height: number;
+    sizeBytes: number;
+  };
+}
+
 export interface Concept {
   id: string;
   label: string;
@@ -155,6 +169,8 @@ export interface Concept {
   summary: string;
   changeExplanation: string;
   generatedImage?: GeneratedConceptImage;
+  /** Present for concepts produced after the Phase 2 Primary View pipeline. */
+  sourceProvenance?: ConceptSourceProvenance;
 }
 
 export interface ConceptVersionEntry {

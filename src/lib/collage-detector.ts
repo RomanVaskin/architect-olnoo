@@ -92,6 +92,22 @@ function fullImageView(pixels: PixelBuffer, confidence: number): CollageDetectio
   };
 }
 
+/**
+ * Deterministic user-confirmed fallback for collages without visible separator
+ * bands. Integer boundaries cover every source row exactly once; the original
+ * pixel buffer is never touched.
+ */
+export function splitIntoEqualVerticalViews(width: number, height: number, count: 1 | 2 | 3): DetectedView[] {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height < count) {
+    throw new Error("Image dimensions must be positive integers large enough for the selected view count");
+  }
+  return Array.from({ length: count }, (_, index) => {
+    const y = Math.round((height * index) / count);
+    const end = Math.round((height * (index + 1)) / count);
+    return { crop: { x: 0, y, width, height: end - y }, confidence: 1 };
+  });
+}
+
 interface Band {
   start: number;
   end: number;
