@@ -26,21 +26,24 @@ create table public.workspace_members (
 create table public.projects (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
+  client_import_key text not null default gen_random_uuid()::text,
   created_by uuid not null references auth.users(id) on delete restrict,
   name text not null check (char_length(name) between 1 and 200),
   building_type text not null default 'Частный дом',
-  lifecycle_stage text not null default 'intake',
-  state text not null default 'draft',
+  lifecycle_stage text not null default 'intake' check (lifecycle_stage in ('intake', 'concept', 'design-development', 'professional-documentation', 'construction-documentation', 'construction-support', 'operation-modernization')),
+  state text not null default 'draft' check (state in ('draft', 'in-progress', 'awaiting-review', 'needs-specialist-review', 'approved', 'blocked', 'archived')),
   site jsonb not null default '{}'::jsonb,
   brief jsonb not null default '{}'::jsonb,
   selected_concept_id uuid,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  unique (workspace_id, client_import_key)
 );
 
 create table public.project_files (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
+  client_import_key text not null default gen_random_uuid()::text,
   created_by uuid not null references auth.users(id) on delete restrict,
   kind text not null check (kind in ('photo', 'drawing', 'document', 'concept', 'export')),
   name text not null check (char_length(name) between 1 and 300),
@@ -49,18 +52,21 @@ create table public.project_files (
   storage_path text unique,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
-  unique (project_id, id)
+  unique (project_id, id),
+  unique (project_id, client_import_key)
 );
 
 create table public.source_views (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
+  client_import_key text not null default gen_random_uuid()::text,
   source_file_id uuid not null,
   role text not null check (role in ('front', 'side', 'rear', 'detail', 'other')),
   crop jsonb not null,
   sort_order integer not null default 0,
   is_primary boolean not null default false,
   created_at timestamptz not null default now(),
+  unique (project_id, client_import_key),
   foreign key (project_id, source_file_id)
     references public.project_files(project_id, id) on delete cascade
 );
@@ -72,11 +78,12 @@ create unique index source_views_one_primary_per_project
 create table public.concepts (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
+  client_import_key text not null default gen_random_uuid()::text,
   parent_concept_id uuid,
   created_by uuid not null references auth.users(id) on delete restrict,
   image_file_id uuid,
   label text not null check (char_length(label) between 1 and 240),
-  state text not null default 'awaiting-review',
+  state text not null default 'awaiting-review' check (state in ('draft', 'in-progress', 'awaiting-review', 'needs-specialist-review', 'approved', 'blocked', 'archived')),
   summary text not null default '',
   change_explanation text not null default '',
   generation_mode text,
@@ -85,6 +92,7 @@ create table public.concepts (
   geometry_verification jsonb,
   created_at timestamptz not null default now(),
   unique (project_id, id),
+  unique (project_id, client_import_key),
   foreign key (project_id, image_file_id)
     references public.project_files(project_id, id)
     deferrable initially deferred,
@@ -102,10 +110,12 @@ alter table public.projects
 create table public.concept_versions (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
+  client_import_key text not null default gen_random_uuid()::text,
   concept_id uuid not null,
   label text not null,
   change_summary text not null default '',
   created_at timestamptz not null default now(),
+  unique (project_id, client_import_key),
   foreign key (project_id, concept_id)
     references public.concepts(project_id, id) on delete cascade
 );
@@ -127,14 +137,30 @@ create table public.generation_attempts (
     deferrable initially deferred
 );
 
+create table public.concept_feedback (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  client_import_key text not null default gen_random_uuid()::text,
+  concept_id uuid not null,
+  author_user_id uuid references auth.users(id) on delete set null,
+  author_name text not null default '',
+  comment text not null check (char_length(comment) between 1 and 5000),
+  created_at timestamptz not null default now(),
+  unique (project_id, client_import_key),
+  foreign key (project_id, concept_id)
+    references public.concepts(project_id, id) on delete cascade
+);
+
 create table public.activity_events (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
+  client_import_key text not null default gen_random_uuid()::text,
   actor_user_id uuid references auth.users(id) on delete set null,
   actor_type text not null check (actor_type in ('user', 'agent', 'system')),
   action text not null,
   metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  unique (project_id, client_import_key)
 );
 
 create index workspace_members_user_id_idx on public.workspace_members(user_id);
@@ -144,6 +170,7 @@ create index source_views_project_id_idx on public.source_views(project_id);
 create index concepts_project_id_created_at_idx on public.concepts(project_id, created_at desc);
 create index concept_versions_project_id_created_at_idx on public.concept_versions(project_id, created_at desc);
 create index generation_attempts_project_id_created_at_idx on public.generation_attempts(project_id, created_at desc);
+create index concept_feedback_project_id_created_at_idx on public.concept_feedback(project_id, created_at desc);
 create index activity_events_project_id_created_at_idx on public.activity_events(project_id, created_at desc);
 
 create function private.is_workspace_member(target_workspace_id uuid)
@@ -310,6 +337,7 @@ alter table public.source_views enable row level security;
 alter table public.concepts enable row level security;
 alter table public.concept_versions enable row level security;
 alter table public.generation_attempts enable row level security;
+alter table public.concept_feedback enable row level security;
 alter table public.activity_events enable row level security;
 
 revoke all on table
@@ -321,6 +349,7 @@ revoke all on table
   public.concepts,
   public.concept_versions,
   public.generation_attempts,
+  public.concept_feedback,
   public.activity_events
 from anon;
 
@@ -333,6 +362,7 @@ grant select, insert, update, delete on table
   public.concepts,
   public.concept_versions,
   public.generation_attempts,
+  public.concept_feedback,
   public.activity_events
 to authenticated;
 grant usage on type public.workspace_role to authenticated;
@@ -399,8 +429,17 @@ create policy generation_attempts_select on public.generation_attempts for selec
 create policy generation_attempts_insert on public.generation_attempts for insert to authenticated with check (user_id = (select auth.uid()) and private.can_edit_project(project_id));
 create policy generation_attempts_update on public.generation_attempts for update to authenticated using (user_id = (select auth.uid()) and private.can_edit_project(project_id)) with check (user_id = (select auth.uid()) and private.can_edit_project(project_id));
 
+create policy concept_feedback_select on public.concept_feedback for select to authenticated using (private.can_view_project(project_id));
+create policy concept_feedback_insert on public.concept_feedback for insert to authenticated with check (author_user_id = (select auth.uid()) and private.can_edit_project(project_id));
+create policy concept_feedback_update on public.concept_feedback for update to authenticated using (author_user_id = (select auth.uid()) and private.can_edit_project(project_id)) with check (author_user_id = (select auth.uid()) and private.can_edit_project(project_id));
+create policy concept_feedback_delete on public.concept_feedback for delete to authenticated using (author_user_id = (select auth.uid()) and private.can_edit_project(project_id));
+
 create policy activity_events_select on public.activity_events for select to authenticated using (private.can_view_project(project_id));
-create policy activity_events_insert on public.activity_events for insert to authenticated with check (private.can_edit_project(project_id));
+create policy activity_events_insert on public.activity_events for insert to authenticated
+with check (private.can_edit_project(project_id) and (actor_user_id is null or actor_user_id = (select auth.uid())));
+create policy activity_events_update on public.activity_events for update to authenticated
+using (private.can_edit_project(project_id) and (actor_user_id is null or actor_user_id = (select auth.uid())))
+with check (private.can_edit_project(project_id) and (actor_user_id is null or actor_user_id = (select auth.uid())));
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (

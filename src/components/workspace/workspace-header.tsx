@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { LifecycleStageBadge, ProjectStateBadge } from "@/components/ui/badge";
+import { ProjectSyncControl } from "@/components/workspace/project-sync-control";
 import type { Project } from "@/lib/types";
 
 export function WorkspaceHeader({ project }: { project: Project }) {
@@ -20,15 +21,18 @@ export function WorkspaceHeader({ project }: { project: Project }) {
             {project.buildingType} · {project.site.address}
           </p>
         </div>
-        <button
-          type="button"
-          disabled
-          title="Export Center появится на следующем этапе"
-          className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium text-ink-secondary opacity-50"
-        >
-          <Download className="h-4 w-4" />
-          Экспорт
-        </button>
+        <div className="flex flex-wrap items-start justify-end gap-2">
+          <ProjectSyncControl projectId={project.id} />
+          <button
+            type="button"
+            disabled
+            title="Export Center появится на следующем этапе"
+            className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium text-ink-secondary opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            Экспорт
+          </button>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <LifecycleStageBadge stage={project.lifecycleStage} />

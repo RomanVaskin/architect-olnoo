@@ -14,6 +14,7 @@ test("backend migration enables RLS on every public application table", () => {
     "concepts",
     "concept_versions",
     "generation_attempts",
+    "concept_feedback",
     "activity_events",
   ]) {
     assert.match(migration, new RegExp(`alter table public\\.${table} enable row level security;`));
@@ -50,4 +51,13 @@ test("project-scoped references cannot point to records from another project", (
   assert.match(migration, /foreign key \(id, selected_concept_id\)[\s\S]*?references public\.concepts\(project_id, id\)/);
   assert.match(migration, /foreign key \(project_id, concept_id\)[\s\S]*?references public\.concepts\(project_id, id\)/);
   assert.match(migration, /foreign key \(project_id, source_concept_id\)[\s\S]*?references public\.concepts\(project_id, id\)/);
+  assert.match(migration, /create table public\.concept_feedback[\s\S]*?foreign key \(project_id, concept_id\)[\s\S]*?references public\.concepts\(project_id, id\)/);
+});
+
+test("local imports have project-scoped idempotency keys", () => {
+  for (const table of ["projects", "project_files", "source_views", "concepts", "concept_versions", "concept_feedback", "activity_events"]) {
+    const scope = table === "projects" ? "workspace_id" : "project_id";
+    assert.match(migration, new RegExp(`create table public\\.${table}[\\s\\S]*?unique \\(${scope}, client_import_key\\)`));
+  }
+  assert.match(migration, /create policy activity_events_update[\s\S]*?private\.can_edit_project\(project_id\)/);
 });

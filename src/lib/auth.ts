@@ -47,7 +47,7 @@ export async function requireAuthenticatedUser(request: Request): Promise<AuthRe
   }
 
   const subject = typeof data?.claims?.sub === "string" ? data.claims.sub : null;
-  if (!subject) return { ok: false, status: 401, code: "authentication-required", message: "Войдите в аккаунт OLNOO, чтобы использовать AI-генерацию." };
+  if (!subject) return { ok: false, status: 401, code: "authentication-required", message: "Войдите в аккаунт OLNOO, чтобы продолжить." };
 
   const email = typeof data?.claims?.email === "string" ? data.claims.email : undefined;
   return { ok: true, userId: subject, ...(email ? { email } : {}), localDevelopment: false };

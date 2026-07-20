@@ -37,11 +37,12 @@ import { conceptStateFromGeometryReview } from "./geometry-quality-gate";
  */
 
 const DB_NAME = "architect-olnoo-mvp";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const PROJECTS_STORE = "projects";
 const IMAGES_STORE = "concept-images";
 const ATTEMPTS_STORE = "generation-attempts";
 const SOURCE_IMAGES_STORE = "source-images";
+const SERVER_SYNC_STORE = "server-sync";
 
 interface StoredGeneratedImage {
   imageKey: string;
@@ -76,6 +77,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(SOURCE_IMAGES_STORE)) {
         db.createObjectStore(SOURCE_IMAGES_STORE, { keyPath: "imageKey" });
+      }
+      if (!db.objectStoreNames.contains(SERVER_SYNC_STORE)) {
+        db.createObjectStore(SERVER_SYNC_STORE, { keyPath: "localProjectId" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -152,6 +156,32 @@ async function getSourceImageBlob(imageKey: string): Promise<Blob | undefined> {
 export interface DraftSourceFileInput extends SourceFileRecordInput {
   /** Raw bytes for a raster photo — present iff hasImage is true. Never written into the project's JSON record (see buildSourceRecords). */
   file?: File;
+}
+
+export type LocalProjectSyncStatus = "syncing" | "synced" | "failed";
+
+export interface LocalProjectSyncRecord {
+  localProjectId: string;
+  status: LocalProjectSyncStatus;
+  updatedAt: string;
+  serverProjectId?: string;
+  errorCode?: string;
+}
+
+export async function getLocalProjectSync(localProjectId: string): Promise<LocalProjectSyncRecord | undefined> {
+  const db = await openDb();
+  const tx = db.transaction(SERVER_SYNC_STORE, "readonly");
+  return requestToPromise<LocalProjectSyncRecord | undefined>(tx.objectStore(SERVER_SYNC_STORE).get(localProjectId));
+}
+
+export async function saveLocalProjectSync(record: LocalProjectSyncRecord): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(SERVER_SYNC_STORE, "readwrite");
+  tx.objectStore(SERVER_SYNC_STORE).put(structuredClone(record));
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 export interface DraftProjectInput {

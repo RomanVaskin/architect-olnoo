@@ -15,9 +15,18 @@ import type { Feedback } from "@/lib/types";
  * localStorage value is read (no hydration mismatch).
  */
 
-interface ConceptReviewState {
+export interface ConceptReviewState {
   selectedConceptId: string | null;
   feedback: Feedback[];
+}
+
+/** Browser-only snapshot used when copying a local project to the backend. */
+export function getConceptReviewState(
+  projectId: string,
+  initialSelectedConceptId: string | null,
+  initialFeedback: Feedback[],
+): ConceptReviewState {
+  return getSnapshot(projectId, { selectedConceptId: initialSelectedConceptId, feedback: initialFeedback });
 }
 
 const EMPTY_FALLBACK: ConceptReviewState = { selectedConceptId: null, feedback: [] };

@@ -1,6 +1,6 @@
 # Specs
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Status:** Draft
 **Last Updated:** 2026-07-20
 
@@ -17,6 +17,7 @@
 | Документ | Назначение |
 |---|---|
 | [authentication.md](authentication.md) | Supabase Auth, cookie-сессии и защита платных AI-маршрутов |
+| [server-project-sync.md](server-project-sync.md) | Идемпотентный перенос локального проекта и изображений в защищённый backend |
 | [image-upload.md](image-upload.md) | Спецификация загрузки изображений пользователем |
 | [multi-view-source-pipeline.md](multi-view-source-pipeline.md) | Хранение реальных байт исходных фотографий и разбивка вертикальных коллажей на отдельные ракурсы для проверки перед генерацией |
 | [vision-agent.md](vision-agent.md) | Спецификация агента компьютерного зрения |
