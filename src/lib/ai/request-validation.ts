@@ -37,6 +37,74 @@ export interface ValidatedGenerationInput {
   autoReview: boolean;
 }
 
+export interface ValidatedCorrectionInput {
+  images: SourceImageInput[];
+  constraints: ArchitecturalConstraints;
+  findings: string[];
+  mode: GenerationMode;
+  sourceConceptId: string;
+}
+
+export async function validateCorrectionForm(formData: FormData): Promise<ValidatedCorrectionInput> {
+  const files = formData.getAll("images").filter((entry): entry is File => entry instanceof File);
+  if (files.length < 2 || files.length > 3) {
+    throw new GenerationError("validation", "Для исправления нужны текущая концепция, основной исходный ракурс и не более одного опорного ракурса.");
+  }
+  for (const file of files) {
+    if (!ACCEPTED_IMAGE_TYPES.has(file.type) || file.size > MAX_FILE_SIZE) {
+      throw new GenerationError("unsupported-file", `Файл «${file.name}» не подходит для исправления концепции.`);
+    }
+  }
+  const totalImageBytes = files.reduce((sum, file) => sum + file.size, 0);
+  if (totalImageBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
+    throw new GenerationError("validation", formatCombinedImageSizeError(totalImageBytes));
+  }
+
+  const sourceConceptId = String(formData.get("sourceConceptId") ?? "").trim();
+  if (!sourceConceptId || sourceConceptId.length > 200) throw new GenerationError("validation", "Не указана исходная концепция для исправления.");
+  const goal = String(formData.get("goal") ?? "").trim();
+  if (!goal || goal.length > MAX_TEXT_LENGTH) throw new GenerationError("validation", "Цель проекта для исправления не указана или слишком длинная.");
+  const findings = parseStringArray(formData.get("findings")).filter(Boolean).slice(0, 10);
+  if (findings.length === 0) throw new GenerationError("validation", "Reviewer не передал конкретные замечания для исправления.");
+  const modeRaw = String(formData.get("mode") ?? "");
+  if (!GENERATION_MODES.includes(modeRaw as GenerationMode)) throw new GenerationError("validation", "Указан неизвестный режим генерации.");
+
+  const roles = parseCorrectionRoles(formData.get("roles"), files.length);
+  const images: SourceImageInput[] = await Promise.all(files.map(async (file, index) => ({
+    data: Buffer.from(await file.arrayBuffer()),
+    mimeType: file.type,
+    role: roles[index],
+    purpose: index === 0 ? "correction-target" : index === 1 ? "primary" : "reference",
+  })));
+  return {
+    images,
+    constraints: {
+      goal,
+      explicitChanges: String(formData.get("explicitChanges") ?? "").trim().slice(0, MAX_TEXT_LENGTH),
+      mustKeep: parseStringArray(formData.get("mustKeep")),
+      mayChange: parseStringArray(formData.get("mayChange")),
+    },
+    findings,
+    mode: modeRaw as GenerationMode,
+    sourceConceptId,
+  };
+}
+
+function parseCorrectionRoles(value: FormDataEntryValue | null, imageCount: number): SourceViewRole[] {
+  const fallback: SourceViewRole[] = ["other", "front", "other"].slice(0, imageCount) as SourceViewRole[];
+  if (typeof value !== "string" || !value) return fallback;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed) || parsed.length !== imageCount) throw new Error();
+    return parsed.map((role) => {
+      if (typeof role !== "string" || !SOURCE_VIEW_ROLES.has(role as SourceViewRole)) throw new Error();
+      return role as SourceViewRole;
+    });
+  } catch {
+    throw new GenerationError("validation", "Роли изображений для исправления имеют некорректный формат.");
+  }
+}
+
 /**
  * Re-validates everything the client already checked (see
  * new-project-wizard.tsx) — the server never trusts client-side validation

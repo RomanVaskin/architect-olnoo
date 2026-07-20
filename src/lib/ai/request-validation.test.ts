@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GenerationError } from "./errors";
-import { MAX_TOTAL_INLINE_IMAGE_BYTES, formatCombinedImageSizeError, validateGenerationForm } from "./request-validation";
+import { MAX_TOTAL_INLINE_IMAGE_BYTES, formatCombinedImageSizeError, validateCorrectionForm, validateGenerationForm } from "./request-validation";
 
 function makeImageFile(name: string, sizeBytes: number, type = "image/png"): File {
   return new File([Buffer.alloc(sizeBytes)], name, { type });
@@ -112,4 +112,38 @@ test("rejects missing, duplicated, or reordered primary image context", async ()
     formData.append("imageContexts", JSON.stringify(contexts));
     await assert.rejects(() => validateGenerationForm(formData), /Первое изображение должно быть единственным основным ракурсом/);
   }
+});
+
+function correctionFormData(): FormData {
+  const formData = new FormData();
+  formData.append("images", makeImageFile("generated.png", 16));
+  formData.append("images", makeImageFile("primary.png", 16));
+  formData.append("sourceConceptId", "concept-1");
+  formData.append("goal", "Сделать фасад светлее");
+  formData.append("findings", JSON.stringify(["roof: changed pitch"]));
+  formData.append("roles", JSON.stringify(["other", "front"]));
+  formData.append("mode", "balanced");
+  return formData;
+}
+
+test("correction validation requires current concept plus original primary and preserves their purposes", async () => {
+  const result = await validateCorrectionForm(correctionFormData());
+  assert.deepEqual(result.images.map(({ role, purpose }) => ({ role, purpose })), [
+    { role: "other", purpose: "correction-target" },
+    { role: "front", purpose: "primary" },
+  ]);
+  assert.deepEqual(result.findings, ["roof: changed pitch"]);
+  assert.equal(result.sourceConceptId, "concept-1");
+});
+
+test("correction validation rejects a request without concrete reviewer findings", async () => {
+  const formData = correctionFormData();
+  formData.set("findings", "[]");
+  await assert.rejects(() => validateCorrectionForm(formData), /конкретные замечания/);
+});
+
+test("correction validation rejects malformed image roles", async () => {
+  const formData = correctionFormData();
+  formData.set("roles", JSON.stringify(["other", "unknown"]));
+  await assert.rejects(() => validateCorrectionForm(formData), /Роли изображений/);
 });

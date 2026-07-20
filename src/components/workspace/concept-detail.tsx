@@ -10,6 +10,7 @@ import { ConceptFeedback } from "./concept-feedback";
 import { ConceptVisual } from "./concept-visual";
 import type { Concept, Feedback } from "@/lib/types";
 import { GeometryVerificationLine, GeometryVerificationPanel } from "./geometry-verification-summary";
+import { canCreateCorrectedVersion } from "@/lib/concept-correction";
 
 interface ConceptDetailProps {
   concept: Concept;
@@ -18,9 +19,10 @@ interface ConceptDetailProps {
   onAddFeedback: (comment: string) => void;
   onSelect: () => void;
   onBack: () => void;
+  onCreateCorrection?: () => void;
 }
 
-export function ConceptDetail({ concept, isSelected, feedback, onAddFeedback, onSelect, onBack }: ConceptDetailProps) {
+export function ConceptDetail({ concept, isSelected, feedback, onAddFeedback, onSelect, onBack, onCreateCorrection }: ConceptDetailProps) {
   return (
     <div className="flex flex-col gap-6">
       <Button type="button" variant="secondary" size="sm" className="self-start" onClick={onBack}>
@@ -74,6 +76,17 @@ export function ConceptDetail({ concept, isSelected, feedback, onAddFeedback, on
       </Card>
 
       <GeometryVerificationPanel report={concept.geometryVerification} />
+
+      {onCreateCorrection && canCreateCorrectedVersion(concept) ? (
+        <Card className="p-5">
+          <h3 className="text-sm font-medium text-ink">Исправить найденные расхождения</h3>
+          <p className="mt-1 text-sm leading-6 text-ink-secondary">
+            Создать новую связанную версию, сохранив текущий дизайн и исправив только конкретные замечания Quality Gate.
+            Перед запуском потребуется отдельное подтверждение платных AI-запросов.
+          </p>
+          <Button type="button" className="mt-4" onClick={onCreateCorrection}>Создать исправленную версию</Button>
+        </Card>
+      ) : null}
 
       <Card className="p-5">
         <h3 className="text-sm font-medium text-ink-secondary">Обратная связь</h3>

@@ -1,6 +1,6 @@
 # Exterior Agent
 
-**Version:** 0.4.0
+**Version:** 0.5.0
 **Status:** Draft
 **Last Updated:** 2026-07-18
 
@@ -76,6 +76,10 @@ Multipart FormData:
 `src/lib/ai/errors.ts` определяет коды с понятными русскоязычными сообщениями: `missing-api-key`, `unsupported-file`, `provider-timeout`, `safety-rejection`, `rate-limit`, `quota-exhausted`, `malformed-response`, `provider-failure`, `validation`. Конкурентность вызовов провайдера ограничена процессом (`src/lib/ai/concurrency.ts`).
 
 `rate-limit` и `quota-exhausted` оба приходят от Gemini как HTTP 429, но означают разное для пользователя: `rate-limit` — временный всплеск нагрузки, стоит подождать и повторить; `quota-exhausted` — квота проекта на эту модель исчерпана или не активирована (например, free tier с лимитом 0), и повторная попытка не поможет без изменения биллинга/квот. `src/lib/ai/gemini-provider.ts` различает их по содержимому ответа провайдера (`isQuotaExhaustedMessage`) — раздельно от кода, который уходит клиенту; сырой текст ответа провайдера никогда не логируется и не возвращается в браузер.
+
+### Исправленная версия (Phase 6)
+
+`POST /api/concepts/correct` использует тот же provider adapter и model registry, но отдельный контракт и отдельный correction-промпт. Первым изображением служит готовая концепция для редактирования, вторым — исходный Primary View как геометрический эталон, третьим при наличии — один исходный reference view. Запрос создаёт ровно одну новую связанную версию и затем передаёт её Reviewer; он никогда не вызывается автоматически из обычного Quality Gate.
 
 ### Известные ограничения
 

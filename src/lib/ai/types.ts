@@ -5,7 +5,7 @@ export interface SourceImageInput {
   data: Buffer;
   mimeType: string;
   role: SourceViewRole;
-  purpose: "primary" | "reference";
+  purpose: "primary" | "reference" | "correction-target";
 }
 
 export interface ArchitecturalConstraints {
@@ -21,6 +21,9 @@ export interface GenerationRequest {
   /** 1-based index of this variant and the total requested, used only to nudge the model toward distinct outputs. */
   variantIndex: number;
   variantCount: number;
+  /** Used by the explicitly confirmed Phase 6 correction flow. */
+  promptOverride?: string;
+  imageLabels?: string[];
 }
 
 export interface GenerationResult {

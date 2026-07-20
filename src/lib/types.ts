@@ -208,6 +208,8 @@ export interface Concept {
   sourceProvenance?: ConceptSourceProvenance;
   /** Present when Phase 4 automatic visual comparison was requested. */
   geometryVerification?: GeometryVerificationReport;
+  /** Present for a paid Phase 6 correction derived from another concept. */
+  parentConceptId?: string;
 }
 
 export interface ConceptVersionEntry {

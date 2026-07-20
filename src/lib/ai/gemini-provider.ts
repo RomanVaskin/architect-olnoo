@@ -20,13 +20,13 @@ const ROLE_LABELS: Record<SourceImageInput["role"], string> = {
   other: "other view",
 };
 
-export function buildGeminiImageParts(images: SourceImageInput[]) {
+export function buildGeminiImageParts(images: SourceImageInput[], labels?: string[]) {
   return images.flatMap((image, index) => [
     {
-      text:
+      text: labels?.[index] ?? (
         image.purpose === "primary"
           ? `IMAGE ${index + 1}: PRIMARY EDIT TARGET — ${ROLE_LABELS[image.role]}. Edit this image and preserve its camera exactly.`
-          : `IMAGE ${index + 1}: REFERENCE CONTEXT ONLY — ${ROLE_LABELS[image.role]}. Do not use this camera angle for the output.`,
+          : `IMAGE ${index + 1}: REFERENCE CONTEXT ONLY — ${ROLE_LABELS[image.role]}. Do not use this camera angle for the output.`),
     },
     { inlineData: { mimeType: image.mimeType, data: image.data.toString("base64") } },
   ]);
@@ -35,7 +35,7 @@ export function buildGeminiImageParts(images: SourceImageInput[]) {
 export const geminiProvider: ImageGenerationProvider = {
   async generate(spec: ModelSpec, request: GenerationRequest, signal: AbortSignal): Promise<GenerationResult> {
     const ai = getGeminiClient();
-    const prompt = buildArchitecturalPrompt(request.constraints, request.variantIndex, request.variantCount, request.images);
+    const prompt = request.promptOverride ?? buildArchitecturalPrompt(request.constraints, request.variantIndex, request.variantCount, request.images);
 
     let response;
     try {
@@ -46,7 +46,7 @@ export const geminiProvider: ImageGenerationProvider = {
             role: "user",
             parts: [
               { text: prompt },
-              ...buildGeminiImageParts(request.images),
+              ...buildGeminiImageParts(request.images, request.imageLabels),
             ],
           },
         ],

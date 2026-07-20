@@ -80,3 +80,13 @@ test("labels the primary edit target separately from reference-only views", () =
   assert.match((parts[2] as { text: string }).text, /REFERENCE CONTEXT ONLY/);
   assert.match((parts[2] as { text: string }).text, /Do not use this camera angle/);
 });
+
+test("uses explicit correction labels verbatim when the correction route supplies them", () => {
+  const labels = ["GENERATED CONCEPT", "ORIGINAL PRIMARY"];
+  const parts = buildGeminiImageParts([
+    { data: Buffer.from([1]), mimeType: "image/png", role: "other", purpose: "correction-target" },
+    { data: Buffer.from([2]), mimeType: "image/png", role: "front", purpose: "primary" },
+  ], labels);
+  assert.equal((parts[0] as { text: string }).text, labels[0]);
+  assert.equal((parts[2] as { text: string }).text, labels[1]);
+});

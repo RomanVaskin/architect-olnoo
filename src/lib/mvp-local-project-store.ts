@@ -244,6 +244,7 @@ export interface GeneratedConceptInput {
   warnings: string[];
   sourceProvenance?: ConceptSourceProvenance;
   geometryVerification?: GeometryVerificationReport;
+  parentConceptId?: string;
 }
 
 /**
@@ -282,6 +283,7 @@ export async function saveGeneratedConcept(projectId: string, item: GeneratedCon
     generatedImage: { imageKey, mimeType: item.mimeType, mode: item.mode, warnings: [...item.warnings] },
     ...(item.sourceProvenance ? { sourceProvenance: structuredClone(item.sourceProvenance) } : {}),
     ...(item.geometryVerification ? { geometryVerification: structuredClone(item.geometryVerification) } : {}),
+    ...(item.parentConceptId ? { parentConceptId: item.parentConceptId } : {}),
   };
 
   const updated: StoredProject = {
@@ -290,12 +292,26 @@ export async function saveGeneratedConcept(projectId: string, item: GeneratedCon
     state: "awaiting-review",
     updatedAt: now,
     concepts: [...record.concepts, newConcept],
+    versions: item.parentConceptId
+      ? [
+          ...record.versions,
+          {
+            id: `${projectId}-version-${record.versions.length + 1}`,
+            conceptId,
+            label: `Исправление ${record.versions.length + 1}`,
+            createdAt: now,
+            changeSummary: `Исправленная версия концепции ${item.parentConceptId} по замечаниям Quality Gate.`,
+          },
+        ]
+      : record.versions,
     activity: [
       {
         id: `${projectId}-a-${record.activity.length}`,
         actor: "AI Architect",
         actorType: "agent",
-        action: `Сгенерирована концепция «${item.label}»`,
+        action: item.parentConceptId
+          ? `Создана исправленная версия «${item.label}»`
+          : `Сгенерирована концепция «${item.label}»`,
         createdAt: now,
       },
       ...record.activity,

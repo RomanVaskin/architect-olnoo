@@ -12,6 +12,7 @@ export interface PersistableConcept {
   warnings: string[];
   sourceProvenance?: ConceptSourceProvenance;
   geometryVerification?: GeometryVerificationReport;
+  parentConceptId?: string;
 }
 
 /**
