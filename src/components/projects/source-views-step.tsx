@@ -149,9 +149,9 @@ export function SourceViewsStep({ files, onChange }: { files: File[]; onChange: 
   return (
     <div className="mt-6 grid gap-6">
       <p className="rounded-xl border border-border bg-surface-soft px-4 py-3 text-sm text-ink-secondary">
-        В генерацию будет передан только отмеченный ниже{" "}
-        <strong className="font-medium text-ink">основной ракурс (Primary View)</strong>. Перед запуском вы увидите точное
-        изображение, которое получит AI-провайдер. Остальные ракурсы сохраняются в проекте как исходные материалы.
+        Отмеченный ниже <strong className="font-medium text-ink">основной ракурс (Primary View)</strong> станет единственной целью
+        редизайна. До двух следующих включённых ракурсов будут переданы только как контекст того же дома. Перед запуском вы увидите
+        точный набор изображений, который получит AI-провайдер; остальные сохранятся как исходные материалы.
       </p>
       {rasterFiles.map((file) => {
         const key = fileKey(file);

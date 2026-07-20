@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildConceptSourceProvenance, preparePrimaryViewForGeneration } from "./primary-view-generation";
+import { buildConceptSourceProvenance, prepareGenerationViews, preparePrimaryViewForGeneration } from "./primary-view-generation";
 
 function makeFile(name = "house.jpg", type = "image/jpeg"): File {
   return new File([new Uint8Array([1, 2, 3, 4])], name, { type, lastModified: 123 });
@@ -94,4 +94,31 @@ test("builds stable concept provenance linked to the persisted source file and v
     crop: { x: 0, y: 200, width: 450, height: 250 },
     payload: { mimeType: "image/jpeg", width: 450, height: 250, sizeBytes: 2 },
   });
+});
+
+test("prepares primary first plus at most two ordered reference views", async () => {
+  const source = makeFile();
+  const key = `${source.name}-${source.size}`;
+  const prepared = await prepareGenerationViews(
+    [source],
+    [
+      { fileKey: key, crop: { x: 0, y: 600, width: 450, height: 200 }, order: 3, role: "detail", isPrimary: false },
+      { fileKey: key, crop: { x: 0, y: 0, width: 450, height: 200 }, order: 0, role: "front", isPrimary: true },
+      { fileKey: key, crop: { x: 0, y: 400, width: 450, height: 200 }, order: 2, role: "rear", isPrimary: false },
+      { fileKey: key, crop: { x: 0, y: 200, width: 450, height: 200 }, order: 1, role: "side", isPrimary: false },
+    ],
+    { [key]: { width: 450, height: 800 } },
+    async (_blob, crop, mimeType) => new Blob([new Uint8Array([crop.y / 200])], { type: mimeType }),
+  );
+
+  assert.equal(prepared.views.length, 3);
+  assert.deepEqual(prepared.views.map((view) => ({ role: view.role, isPrimary: view.isPrimary })), [
+    { role: "front", isPrimary: true },
+    { role: "side", isPrimary: false },
+    { role: "rear", isPrimary: false },
+  ]);
+  assert.equal(prepared.totalPayloadSizeBytes, 3);
+
+  const provenance = buildConceptSourceProvenance("local-p2", prepared.views[0], prepared.views.slice(1));
+  assert.deepEqual(provenance.referenceViews?.map((view) => view.role), ["side", "rear"]);
 });

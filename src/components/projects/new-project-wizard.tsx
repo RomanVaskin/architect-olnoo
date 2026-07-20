@@ -32,7 +32,7 @@ import { logGenerationDiagnostic } from "@/lib/generation-diagnostics";
 import { fileKey, isRasterImage } from "@/lib/wizard-generation-selection";
 import {
   buildConceptSourceProvenance,
-  preparePrimaryViewForGeneration,
+  prepareGenerationViews,
   type PreparedPrimaryView,
 } from "@/lib/primary-view-generation";
 
@@ -104,7 +104,7 @@ export function NewProjectWizard() {
   const [variantCount, setVariantCount] = useState<1 | 3>(1);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
-  const [preparedPrimaryView, setPreparedPrimaryView] = useState<PreparedPrimaryView | null>(null);
+  const [preparedSourceViews, setPreparedSourceViews] = useState<PreparedPrimaryView[]>([]);
   const [isPreparingPrimaryView, setIsPreparingPrimaryView] = useState(false);
   const [sourceViewError, setSourceViewError] = useState<string | null>(null);
 
@@ -122,11 +122,13 @@ export function NewProjectWizard() {
   const handleSourceViewsChange = useCallback((change: SourceViewsChange) => {
     setConfirmedSourceViews(change.views);
     setSourceDimensions(change.dimensionsByFileKey);
-    setPreparedPrimaryView(null);
+    setPreparedSourceViews([]);
     setSourceViewError(null);
   }, []);
 
-  const generationBytes = preparedPrimaryView?.payloadSizeBytes ?? 0;
+  const preparedPrimaryView = preparedSourceViews[0] ?? null;
+  const preparedReferenceViews = preparedSourceViews.slice(1);
+  const generationBytes = preparedSourceViews.reduce((sum, view) => sum + view.payloadSizeBytes, 0);
 
   const canContinue = useMemo(() => {
     if (step === 0) return projectType === "existing-house";
@@ -162,7 +164,7 @@ export function NewProjectWizard() {
     }
 
     setFiles(unique);
-    setPreparedPrimaryView(null);
+    setPreparedSourceViews([]);
     setSourceViewError(null);
     setFileError("");
     event.target.value = "";
@@ -171,7 +173,7 @@ export function NewProjectWizard() {
   function removeFile(file: File) {
     const next = files.filter((item) => item !== file);
     setFiles(next);
-    setPreparedPrimaryView(null);
+    setPreparedSourceViews([]);
     setSourceViewError(null);
   }
 
@@ -191,13 +193,13 @@ export function NewProjectWizard() {
     setIsPreparingPrimaryView(true);
     setSourceViewError(null);
     try {
-      const prepared = await preparePrimaryViewForGeneration(files, confirmedSourceViews, sourceDimensions);
-      if (prepared.payloadSizeBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
-        setSourceViewError(formatCombinedImageSizeError(prepared.payloadSizeBytes));
+      const prepared = await prepareGenerationViews(files, confirmedSourceViews, sourceDimensions);
+      if (prepared.totalPayloadSizeBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
+        setSourceViewError(formatCombinedImageSizeError(prepared.totalPayloadSizeBytes));
         setStep(2);
         return;
       }
-      setPreparedPrimaryView(prepared);
+      setPreparedSourceViews(prepared.views);
       setGenerationError(null);
       setShowConfirmDialog(true);
     } catch (error) {
@@ -294,10 +296,14 @@ export function NewProjectWizard() {
           // Reuse the draft created by an earlier attempt in this session instead of creating a new one on every retry.
           persistDraft: () => reuseOrCreateDraft(draftProjectId, () => createDraftProject(draftInput)),
           persistAttempt: (projectId, attempt) =>
-            createGenerationAttempt(projectId, attempt, buildConceptSourceProvenance(projectId, preparedPrimaryView)),
+            createGenerationAttempt(projectId, attempt, buildConceptSourceProvenance(projectId, preparedPrimaryView, preparedReferenceViews)),
           requestGeneration: (signal) => {
             const formData = new FormData();
-            formData.append("images", preparedPrimaryView.file);
+            preparedSourceViews.forEach((view) => formData.append("images", view.file));
+            formData.append(
+              "imageContexts",
+              JSON.stringify(preparedSourceViews.map((view) => ({ role: view.role, purpose: view.isPrimary ? "primary" : "reference" }))),
+            );
             formData.append("goal", goal);
             formData.append("explicitChanges", explicitChanges);
             formData.append("mustKeep", JSON.stringify(mustKeep));
@@ -320,7 +326,7 @@ export function NewProjectWizard() {
         label: `Концепция ${CONCEPT_LABELS[index] ?? index + 1}`,
         summary: goal.trim(),
         changeExplanation: explicitChanges.trim() || goal.trim(),
-        sourceProvenance: buildConceptSourceProvenance(result.projectId, preparedPrimaryView),
+        sourceProvenance: buildConceptSourceProvenance(result.projectId, preparedPrimaryView, preparedReferenceViews),
       }));
       setPendingConcepts(concepts);
 
@@ -493,7 +499,7 @@ export function NewProjectWizard() {
             <fieldset className="rounded-2xl border border-border p-5"><legend className="px-2 text-sm font-medium text-ink">Можно изменить</legend><div className="mt-2 grid gap-3">{DEFAULT_MAY_CHANGE.map((item) => <label key={item} className="flex items-start gap-3 text-sm text-ink"><input type="checkbox" checked={mayChange.includes(item)} onChange={() => toggleConstraint(item, "may")} className="mt-0.5 h-4 w-4 accent-[var(--color-action)]" /><span>{item}</span></label>)}</div></fieldset>
           </div>
           <label className="mt-6 grid gap-2 text-sm font-medium text-ink">Что нужно изменить обязательно?<textarea value={explicitChanges} onChange={(event) => setExplicitChanges(event.target.value)} placeholder="Например: заменить облицовочный кирпич светлой штукатуркой и добавить деревянные панели" className="min-h-28 resize-y rounded-xl border border-border bg-surface px-4 py-3 font-normal leading-6 outline-none placeholder:text-ink-secondary focus:border-ink/30" /></label>
-          <div className="mt-6 rounded-2xl bg-surface-soft p-5"><p className="text-sm font-medium text-ink">После запуска</p><p className="mt-1 text-sm leading-6 text-ink-secondary">AI получит только выбранный основной ракурс, зафиксированные ограничения и пожелания, а затем подготовит варианты концепции. Все исходные файлы, ракурсы и происхождение результата сохранятся в проекте.</p></div>
+          <div className="mt-6 rounded-2xl bg-surface-soft p-5"><p className="text-sm font-medium text-ink">После запуска</p><p className="mt-1 text-sm leading-6 text-ink-secondary">AI изменит выбранный основной ракурс и сможет использовать до двух дополнительных видов только как контекст того же дома. Все исходные файлы, ракурсы и происхождение результата сохранятся в проекте.</p></div>
         </section>
       ) : null}
 
@@ -510,15 +516,16 @@ export function NewProjectWizard() {
 
       {showConfirmDialog ? (
         <GenerationConfirmDialog
-          fileCount={1}
-          sourcePreview={{
-            blob: preparedPrimaryView!.file,
-            sourceFileName: preparedPrimaryView!.sourceFileName,
-            role: preparedPrimaryView!.role,
-            width: preparedPrimaryView!.dimensions.width,
-            height: preparedPrimaryView!.dimensions.height,
-            sizeBytes: preparedPrimaryView!.payloadSizeBytes,
-          }}
+          fileCount={preparedSourceViews.length}
+          sourcePreviews={preparedSourceViews.map((view) => ({
+            blob: view.file,
+            sourceFileName: view.sourceFileName,
+            role: view.role,
+            width: view.dimensions.width,
+            height: view.dimensions.height,
+            sizeBytes: view.payloadSizeBytes,
+            isPrimary: view.isPrimary,
+          }))}
           mode={mode}
           onModeChange={setMode}
           variantCount={variantCount}

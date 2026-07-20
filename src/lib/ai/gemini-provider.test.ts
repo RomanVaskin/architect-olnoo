@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GenerationError } from "./errors";
-import { isQuotaExhaustedMessage, mapProviderError } from "./gemini-provider";
+import { buildGeminiImageParts, isQuotaExhaustedMessage, mapProviderError } from "./gemini-provider";
 
 // A trimmed but real example of the body Gemini returns when a project's
 // free-tier quota for an image model is zero (captured from a live 429).
@@ -67,4 +67,16 @@ test("mapProviderError maps abort/timeout statuses without leaking provider deta
 test("mapProviderError passes through an existing GenerationError unchanged", () => {
   const original = new GenerationError("safety-rejection");
   assert.equal(mapProviderError(original), original);
+});
+
+test("labels the primary edit target separately from reference-only views", () => {
+  const parts = buildGeminiImageParts([
+    { data: Buffer.from([1]), mimeType: "image/jpeg", role: "front", purpose: "primary" },
+    { data: Buffer.from([2]), mimeType: "image/png", role: "side", purpose: "reference" },
+  ]);
+
+  assert.equal(parts.length, 4);
+  assert.match((parts[0] as { text: string }).text, /PRIMARY EDIT TARGET/);
+  assert.match((parts[2] as { text: string }).text, /REFERENCE CONTEXT ONLY/);
+  assert.match((parts[2] as { text: string }).text, /Do not use this camera angle/);
 });

@@ -1,5 +1,5 @@
 import { GenerationError } from "./errors";
-import type { GenerationMode } from "@/lib/types";
+import type { GenerationMode, SourceViewRole } from "@/lib/types";
 import type { ArchitecturalConstraints, SourceImageInput } from "./types";
 
 const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -7,6 +7,7 @@ const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const MAX_IMAGES = 3;
 const MAX_TEXT_LENGTH = 4000;
 const GENERATION_MODES: GenerationMode[] = ["auto", "fast", "balanced", "maximum-quality"];
+const SOURCE_VIEW_ROLES = new Set<SourceViewRole>(["front", "side", "rear", "detail", "other"]);
 
 /**
  * Conservative cap on the combined raw (pre-base64) bytes of all images in a
@@ -100,10 +101,13 @@ export async function validateGenerationForm(formData: FormData): Promise<Valida
     throw new GenerationError("validation", "Количество вариантов должно быть от 1 до 3.");
   }
 
+  const contexts = parseImageContexts(formData.get("imageContexts"), files.length);
   const images: SourceImageInput[] = await Promise.all(
-    files.map(async (file) => ({
+    files.map(async (file, index) => ({
       data: Buffer.from(await file.arrayBuffer()),
       mimeType: file.type,
+      role: contexts[index].role,
+      purpose: contexts[index].purpose,
     })),
   );
 
@@ -113,6 +117,33 @@ export async function validateGenerationForm(formData: FormData): Promise<Valida
     mode,
     variantCount: variantCountRaw,
   };
+}
+
+function parseImageContexts(value: FormDataEntryValue | null, imageCount: number): Array<{ role: SourceViewRole; purpose: "primary" | "reference" }> {
+  if (typeof value !== "string" || !value) {
+    return Array.from({ length: imageCount }, (_, index) => ({ role: "other", purpose: index === 0 ? "primary" : "reference" }));
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new GenerationError("validation", "Описание ракурсов имеет некорректный формат.");
+  }
+  if (!Array.isArray(parsed) || parsed.length !== imageCount) {
+    throw new GenerationError("validation", "Количество описаний ракурсов не совпадает с количеством изображений.");
+  }
+  const contexts = parsed.map((item) => {
+    const role = (item as { role?: unknown })?.role;
+    const purpose = (item as { purpose?: unknown })?.purpose;
+    if (typeof role !== "string" || !SOURCE_VIEW_ROLES.has(role as SourceViewRole) || (purpose !== "primary" && purpose !== "reference")) {
+      throw new GenerationError("validation", "Описание одного из ракурсов содержит неизвестную роль или назначение.");
+    }
+    return { role: role as SourceViewRole, purpose: purpose as "primary" | "reference" };
+  });
+  if (contexts.filter((context) => context.purpose === "primary").length !== 1 || contexts[0].purpose !== "primary") {
+    throw new GenerationError("validation", "Первое изображение должно быть единственным основным ракурсом.");
+  }
+  return contexts;
 }
 
 function parseStringArray(value: FormDataEntryValue | null): string[] {

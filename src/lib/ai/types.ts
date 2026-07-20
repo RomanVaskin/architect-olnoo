@@ -1,9 +1,11 @@
-import type { GenerationMode } from "@/lib/types";
+import type { GenerationMode, SourceViewRole } from "@/lib/types";
 
 /** A single source image already decoded to bytes, ready to send to a provider. */
 export interface SourceImageInput {
   data: Buffer;
   mimeType: string;
+  role: SourceViewRole;
+  purpose: "primary" | "reference";
 }
 
 export interface ArchitecturalConstraints {

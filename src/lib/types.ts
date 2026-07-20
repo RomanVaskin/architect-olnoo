@@ -146,8 +146,7 @@ export interface GeneratedConceptImage {
   warnings: string[];
 }
 
-/** Exact Primary View payload used for a generated concept. */
-export interface ConceptSourceProvenance {
+export interface ConceptSourceViewProvenance {
   sourceFileId: string;
   sourceViewId: string;
   sourceFileName: string;
@@ -159,6 +158,11 @@ export interface ConceptSourceProvenance {
     height: number;
     sizeBytes: number;
   };
+}
+
+/** Exact Primary View plus optional reference-view payloads used for a generated concept. */
+export interface ConceptSourceProvenance extends ConceptSourceViewProvenance {
+  referenceViews?: ConceptSourceViewProvenance[];
 }
 
 export interface Concept {

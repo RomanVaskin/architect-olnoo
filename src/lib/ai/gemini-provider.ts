@@ -1,7 +1,7 @@
 import { GoogleGenAI, FinishReason, Modality } from "@google/genai";
 import { buildArchitecturalPrompt } from "./prompt-builder";
 import { GenerationError } from "./errors";
-import type { GenerationRequest, GenerationResult, ImageGenerationProvider, ModelSpec } from "./types";
+import type { GenerationRequest, GenerationResult, ImageGenerationProvider, ModelSpec, SourceImageInput } from "./types";
 
 const REJECTED_FINISH_REASONS = new Set<FinishReason>([
   FinishReason.SAFETY,
@@ -12,6 +12,26 @@ const REJECTED_FINISH_REASONS = new Set<FinishReason>([
 ]);
 
 let client: GoogleGenAI | null = null;
+
+const ROLE_LABELS: Record<SourceImageInput["role"], string> = {
+  front: "front facade",
+  side: "side facade",
+  rear: "rear facade",
+  detail: "detail",
+  other: "other view",
+};
+
+export function buildGeminiImageParts(images: SourceImageInput[]) {
+  return images.flatMap((image, index) => [
+    {
+      text:
+        image.purpose === "primary"
+          ? `IMAGE ${index + 1}: PRIMARY EDIT TARGET — ${ROLE_LABELS[image.role]}. Edit this image and preserve its camera exactly.`
+          : `IMAGE ${index + 1}: REFERENCE CONTEXT ONLY — ${ROLE_LABELS[image.role]}. Do not use this camera angle for the output.`,
+    },
+    { inlineData: { mimeType: image.mimeType, data: image.data.toString("base64") } },
+  ]);
+}
 
 function getClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -27,7 +47,7 @@ function getClient(): GoogleGenAI {
 export const geminiProvider: ImageGenerationProvider = {
   async generate(spec: ModelSpec, request: GenerationRequest, signal: AbortSignal): Promise<GenerationResult> {
     const ai = getClient();
-    const prompt = buildArchitecturalPrompt(request.constraints, request.variantIndex, request.variantCount);
+    const prompt = buildArchitecturalPrompt(request.constraints, request.variantIndex, request.variantCount, request.images);
 
     let response;
     try {
@@ -38,9 +58,7 @@ export const geminiProvider: ImageGenerationProvider = {
             role: "user",
             parts: [
               { text: prompt },
-              ...request.images.map((image) => ({
-                inlineData: { mimeType: image.mimeType, data: image.data.toString("base64") },
-              })),
+              ...buildGeminiImageParts(request.images),
             ],
           },
         ],

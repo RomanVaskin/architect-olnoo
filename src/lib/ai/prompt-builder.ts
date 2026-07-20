@@ -1,4 +1,4 @@
-import type { ArchitecturalConstraints } from "./types";
+import type { ArchitecturalConstraints, SourceImageInput } from "./types";
 
 /**
  * Builds the structured prompt sent to the image-generation model (see
@@ -15,6 +15,7 @@ export function buildArchitecturalPrompt(
   constraints: ArchitecturalConstraints,
   variantIndex: number,
   variantCount: number,
+  images: Array<Pick<SourceImageInput, "role" | "purpose">> = [],
 ): string {
   const { goal, explicitChanges, mustKeep, mayChange } = constraints;
 
@@ -43,6 +44,18 @@ export function buildArchitecturalPrompt(
     "- Output a single photorealistic architectural visualization photo.",
     "- Do not output text, diagrams, collages, floor plans, technical drawings, or abstract geometric compositions.",
   ];
+
+  if (images.length > 1) {
+    lines.push(
+      "",
+      "Multi-view reference rules:",
+      `- Image 1 is the PRIMARY EDIT TARGET (${images[0]?.role ?? "other"} view). Output must keep Image 1 camera, crop, perspective, and composition.`,
+      `- Images 2–${images.length} are REFERENCE CONTEXT ONLY from other views of the same existing house.`,
+      "- Use reference images only to understand consistent materials and building identity.",
+      "- Do not switch the output to a reference camera angle and do not combine views into a collage.",
+      "- Output exactly one edited version of Image 1.",
+    );
+  }
 
   if (variantCount > 1) {
     lines.push(

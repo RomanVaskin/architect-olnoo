@@ -36,16 +36,39 @@ function ConceptDownloadLink({ concept }: { concept: RecoveryConcept }) {
   );
 }
 
+interface SourcePreview {
+  blob: Blob;
+  sourceFileName: string;
+  role: SourceViewRole;
+  width: number;
+  height: number;
+  sizeBytes: number;
+  isPrimary: boolean;
+}
+
+function SourcePreviewCard({ preview }: { preview: SourcePreview }) {
+  const url = useBlobUrl(preview.blob);
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-surface-soft">
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element -- exact in-memory File that will be sent in FormData
+        <img src={url} alt={`${preview.isPrimary ? "Основной" : "Опорный"} ракурс из файла ${preview.sourceFileName}`} className="aspect-[4/3] w-full bg-icon-bg object-cover" />
+      ) : (
+        <div className="aspect-[4/3] w-full bg-icon-bg" aria-hidden />
+      )}
+      <div className="px-3 py-2">
+        <p className="text-xs font-medium text-ink">{preview.isPrimary ? "Основной · цель" : "Опорный · контекст"}</p>
+        <p className="mt-1 text-[11px] leading-4 text-ink-secondary">
+          {SOURCE_VIEW_ROLE_LABELS[preview.role]} · {preview.width}×{preview.height} · {Math.max(1, Math.ceil(preview.sizeBytes / 1024))} КБ
+        </p>
+      </div>
+    </div>
+  );
+}
+
 interface GenerationConfirmDialogProps {
   fileCount: number;
-  sourcePreview: {
-    blob: Blob;
-    sourceFileName: string;
-    role: SourceViewRole;
-    width: number;
-    height: number;
-    sizeBytes: number;
-  };
+  sourcePreviews: SourcePreview[];
   mode: GenerationMode;
   onModeChange: (mode: GenerationMode) => void;
   variantCount: 1 | 3;
@@ -68,7 +91,7 @@ interface GenerationConfirmDialogProps {
 
 export function GenerationConfirmDialog({
   fileCount,
-  sourcePreview,
+  sourcePreviews,
   mode,
   onModeChange,
   variantCount,
@@ -88,13 +111,12 @@ export function GenerationConfirmDialog({
   retryAcknowledged,
   onRetryAcknowledgedChange,
 }: GenerationConfirmDialogProps) {
-  const sourcePreviewUrl = useBlobUrl(sourcePreview.blob);
   const controlsDisabled = isGenerating || persistenceFailed;
   const confirmBlockedByAcknowledgement = requiresRetryAcknowledgement && !retryAcknowledged;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" role="dialog" aria-modal="true" aria-labelledby="generation-dialog-title">
-      <div className="w-full max-w-lg rounded-2xl border border-border bg-surface p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink/40 p-4" role="dialog" aria-modal="true" aria-labelledby="generation-dialog-title">
+      <div className="my-auto max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-xl">
         <h2 id="generation-dialog-title" className="text-lg font-semibold text-ink">
           Подтвердите генерацию концепций
         </h2>
@@ -107,22 +129,13 @@ export function GenerationConfirmDialog({
           запрос к AI-провайдеру мог уже уйти — отмена не гарантирует, что оплата не будет выставлена.
         </p>
 
-        <div className="mt-5 overflow-hidden rounded-xl border border-border bg-surface-soft">
-          {sourcePreviewUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- exact in-memory File that will be sent in FormData
-            <img
-              src={sourcePreviewUrl}
-              alt={`Основной ракурс из файла ${sourcePreview.sourceFileName}`}
-              className="max-h-56 w-full bg-icon-bg object-contain"
-            />
-          ) : (
-            <div className="h-40 w-full bg-icon-bg" aria-hidden />
-          )}
-          <div className="px-4 py-3">
-            <p className="text-sm font-medium text-ink">Именно это изображение будет отправлено AI-провайдеру</p>
-            <p className="mt-1 text-xs leading-5 text-ink-secondary">
-              {SOURCE_VIEW_ROLE_LABELS[sourcePreview.role]} · {sourcePreview.width}×{sourcePreview.height} px · {Math.max(1, Math.ceil(sourcePreview.sizeBytes / 1024))} КБ
-            </p>
+        <div className="mt-5">
+          <p className="text-sm font-medium text-ink">Именно эти изображения будут отправлены AI-провайдеру</p>
+          <p className="mt-1 text-xs leading-5 text-ink-secondary">Основной ракурс — цель редизайна. Остальные используются только как контекст здания.</p>
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            {sourcePreviews.map((preview, index) => (
+              <SourcePreviewCard key={`${preview.sourceFileName}-${index}`} preview={preview} />
+            ))}
           </div>
         </div>
 

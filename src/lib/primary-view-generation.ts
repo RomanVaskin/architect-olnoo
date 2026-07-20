@@ -1,5 +1,5 @@
 import { cropImageToBlob, type CropRect } from "./crop-image";
-import type { ConceptSourceProvenance, SourceImageDimensions, SourceViewRole } from "./types";
+import type { ConceptSourceProvenance, ConceptSourceViewProvenance, SourceImageDimensions, SourceViewRole } from "./types";
 import { fileKey, isRasterImage } from "./wizard-generation-selection";
 
 export interface PrimaryViewInput {
@@ -20,6 +20,12 @@ export interface PreparedPrimaryView {
   role: SourceViewRole;
   dimensions: SourceImageDimensions;
   payloadSizeBytes: number;
+  isPrimary: boolean;
+}
+
+export interface PreparedGenerationViews {
+  views: PreparedPrimaryView[];
+  totalPayloadSizeBytes: number;
 }
 
 type CropImage = (source: Blob, crop: CropRect, mimeType?: string) => Promise<Blob>;
@@ -40,56 +46,33 @@ function extensionForMimeType(mimeType: string): string {
   return "png";
 }
 
-function primaryFileName(sourceName: string, mimeType: string): string {
+function preparedFileName(sourceName: string, mimeType: string, isPrimary: boolean, index: number): string {
   const stem = sourceName.replace(/\.[^.]+$/, "").replace(/[^\p{L}\p{N}._-]+/gu, "-") || "source";
-  return `${stem}-primary-view.${extensionForMimeType(mimeType)}`;
+  return `${stem}-${isPrimary ? "primary" : `reference-${index}`}-view.${extensionForMimeType(mimeType)}`;
 }
 
-/**
- * Produces the exact single image that Phase 2 sends to the paid generation
- * endpoint. A full-frame Primary View reuses the original bytes; a partial
- * view is cropped once and the resulting File is reused for preview and
- * request payload so the user sees exactly what will be uploaded.
- */
-export async function preparePrimaryViewForGeneration(
+async function prepareView(
   files: File[],
-  views: PrimaryViewInput[],
+  view: PrimaryViewInput,
+  sourceViewIndex: number,
   dimensionsByFileKey: Record<string, SourceImageDimensions>,
-  cropImage: CropImage = cropImageToBlob,
+  cropImage: CropImage,
 ): Promise<PreparedPrimaryView> {
-  const primaryViews = views
-    .map((view, sourceViewIndex) => ({ view, sourceViewIndex }))
-    .filter(({ view }) => view.isPrimary);
-  if (primaryViews.length !== 1) {
-    throw new Error(`Для генерации должен быть выбран ровно один основной ракурс (найдено: ${primaryViews.length}).`);
-  }
-
-  const { view, sourceViewIndex } = primaryViews[0];
   const sourceFileIndex = files.findIndex((file) => fileKey(file) === view.fileKey);
   const sourceFile = files[sourceFileIndex];
-  if (!sourceFile || !isRasterImage(sourceFile)) {
-    throw new Error("Исходная фотография основного ракурса не найдена.");
-  }
-
+  if (!sourceFile || !isRasterImage(sourceFile)) throw new Error("Исходная фотография подтверждённого ракурса не найдена.");
   const dimensions = dimensionsByFileKey[view.fileKey];
-  if (!dimensions) {
-    throw new Error("Размеры исходной фотографии ещё не определены. Вернитесь к шагу «Ракурсы» и дождитесь анализа.");
-  }
+  if (!dimensions) throw new Error("Размеры исходной фотографии ещё не определены. Вернитесь к шагу «Ракурсы» и дождитесь анализа.");
   assertValidCrop(view.crop, dimensions);
 
-  const isFullFrame =
-    view.crop.x === 0 &&
-    view.crop.y === 0 &&
-    view.crop.width === dimensions.width &&
-    view.crop.height === dimensions.height;
+  const isFullFrame = view.crop.x === 0 && view.crop.y === 0 && view.crop.width === dimensions.width && view.crop.height === dimensions.height;
   const mimeType = sourceFile.type || "image/png";
   const payloadBlob = isFullFrame ? sourceFile : await cropImage(sourceFile, view.crop, mimeType);
-  if (payloadBlob.size === 0) throw new Error("Не удалось подготовить изображение основного ракурса.");
-
+  if (payloadBlob.size === 0) throw new Error("Не удалось подготовить изображение подтверждённого ракурса.");
   const payloadType = payloadBlob.type || mimeType;
   const preparedFile = isFullFrame
     ? sourceFile
-    : new File([payloadBlob], primaryFileName(sourceFile.name, payloadType), {
+    : new File([payloadBlob], preparedFileName(sourceFile.name, payloadType, view.isPrimary, sourceViewIndex + 1), {
         type: payloadType,
         lastModified: sourceFile.lastModified,
       });
@@ -104,10 +87,49 @@ export async function preparePrimaryViewForGeneration(
     role: view.role,
     dimensions: { width: view.crop.width, height: view.crop.height },
     payloadSizeBytes: preparedFile.size,
+    isPrimary: view.isPrimary,
   };
 }
 
-export function buildConceptSourceProvenance(projectId: string, prepared: PreparedPrimaryView): ConceptSourceProvenance {
+/** Primary edit target first, followed by at most two ordered reference views. */
+export async function prepareGenerationViews(
+  files: File[],
+  views: PrimaryViewInput[],
+  dimensionsByFileKey: Record<string, SourceImageDimensions>,
+  cropImage: CropImage = cropImageToBlob,
+): Promise<PreparedGenerationViews> {
+  const indexed = views.map((view, sourceViewIndex) => ({ view, sourceViewIndex }));
+  const primary = indexed.filter(({ view }) => view.isPrimary);
+  if (primary.length !== 1) {
+    throw new Error(`Для генерации должен быть выбран ровно один основной ракурс (найдено: ${primary.length}).`);
+  }
+  const references = indexed
+    .filter(({ view }) => !view.isPrimary)
+    .sort((a, b) => a.view.order - b.view.order)
+    .slice(0, 2);
+  const selected = [primary[0], ...references];
+  const prepared = await Promise.all(
+    selected.map(({ view, sourceViewIndex }) => prepareView(files, view, sourceViewIndex, dimensionsByFileKey, cropImage)),
+  );
+  return { views: prepared, totalPayloadSizeBytes: prepared.reduce((sum, item) => sum + item.payloadSizeBytes, 0) };
+}
+
+/**
+ * Produces the exact single image that Phase 2 sends to the paid generation
+ * endpoint. A full-frame Primary View reuses the original bytes; a partial
+ * view is cropped once and the resulting File is reused for preview and
+ * request payload so the user sees exactly what will be uploaded.
+ */
+export async function preparePrimaryViewForGeneration(
+  files: File[],
+  views: PrimaryViewInput[],
+  dimensionsByFileKey: Record<string, SourceImageDimensions>,
+  cropImage: CropImage = cropImageToBlob,
+): Promise<PreparedPrimaryView> {
+  return (await prepareGenerationViews(files, views.filter((view) => view.isPrimary), dimensionsByFileKey, cropImage)).views[0];
+}
+
+function buildViewProvenance(projectId: string, prepared: PreparedPrimaryView): ConceptSourceViewProvenance {
   return {
     sourceFileId: `${projectId}-src-${prepared.sourceFileIndex}`,
     sourceViewId: `${projectId}-view-${prepared.sourceViewIndex}`,
@@ -120,5 +142,16 @@ export function buildConceptSourceProvenance(projectId: string, prepared: Prepar
       height: prepared.dimensions.height,
       sizeBytes: prepared.payloadSizeBytes,
     },
+  };
+}
+
+export function buildConceptSourceProvenance(
+  projectId: string,
+  prepared: PreparedPrimaryView,
+  references: PreparedPrimaryView[] = [],
+): ConceptSourceProvenance {
+  return {
+    ...buildViewProvenance(projectId, prepared),
+    ...(references.length > 0 ? { referenceViews: references.map((item) => buildViewProvenance(projectId, item)) } : {}),
   };
 }

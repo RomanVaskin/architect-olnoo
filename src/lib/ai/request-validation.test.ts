@@ -67,3 +67,33 @@ test("still rejects more than 3 images even when combined size is small", async 
     },
   );
 });
+
+test("preserves one primary image followed by typed multi-view references", async () => {
+  const formData = baseFormData();
+  formData.append("images", makeImageFile("front.png", 16));
+  formData.append("images", makeImageFile("side.png", 16));
+  formData.append("imageContexts", JSON.stringify([
+    { role: "front", purpose: "primary" },
+    { role: "side", purpose: "reference" },
+  ]));
+
+  const result = await validateGenerationForm(formData);
+  assert.deepEqual(result.images.map(({ role, purpose }) => ({ role, purpose })), [
+    { role: "front", purpose: "primary" },
+    { role: "side", purpose: "reference" },
+  ]);
+});
+
+test("rejects missing, duplicated, or reordered primary image context", async () => {
+  for (const contexts of [
+    [{ role: "front", purpose: "reference" }, { role: "side", purpose: "reference" }],
+    [{ role: "front", purpose: "primary" }, { role: "side", purpose: "primary" }],
+    [{ role: "front", purpose: "reference" }, { role: "side", purpose: "primary" }],
+  ]) {
+    const formData = baseFormData();
+    formData.append("images", makeImageFile("front.png", 16));
+    formData.append("images", makeImageFile("side.png", 16));
+    formData.append("imageContexts", JSON.stringify(contexts));
+    await assert.rejects(() => validateGenerationForm(formData), /Первое изображение должно быть единственным основным ракурсом/);
+  }
+});
