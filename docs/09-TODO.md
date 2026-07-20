@@ -1,8 +1,8 @@
 # TODO
 
-**Version:** 0.1.0
+**Version:** 0.2.0
 **Status:** Draft
-**Last Updated:** 2026-07-17
+**Last Updated:** 2026-07-20
 
 > Список текущих задач и открытых вопросов по проекту Architect OLNOO.
 
@@ -16,8 +16,10 @@
 
 - [ ] Наполнить содержанием документы в `docs/`
 - [ ] Наполнить содержанием документы в `specs/`
-- [ ] Определить технологический стек
-- [ ] Добавить аутентификацию и серверный rate limiting для `POST /api/concepts/generate` и `POST /api/concepts/correct` перед публичным развёртыванием — сейчас эндпоинты открыты и полагаются только на ограничение конкурентности внутри процесса (`src/lib/ai/concurrency.ts`), что не заменяет rate limiting
+- [x] Подключить фундамент Supabase Auth и защитить `POST /api/concepts/generate` / `POST /api/concepts/correct` проверенной серверной сессией
+- [ ] Добавить `NEXT_PUBLIC_SUPABASE_URL` и `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` выбранного проекта в `.env.local`, настроить Site URL и Redirect URLs в Supabase
+- [ ] Рассмотреть и явно утвердить подготовленную `supabase/migrations/202607200001_backend_foundation.sql`; не применять её автоматически к удалённому Supabase-проекту
+- [ ] Добавить распределённый серверный rate limiting и учёт стоимости AI-вызовов — текущая проверка сессии и process-wide concurrency cap не заменяют rate limiting
 - [ ] Заменить временное MVP-хранилище проектов в IndexedDB (`src/lib/mvp-local-project-store.ts`) на реальный бэкенд, когда он появится
 - [ ] Перейти на Gemini Files API вместо inline base64 для изображений, когда запросы начнут регулярно приближаться к консервативному лимиту суммарного размера (`MAX_TOTAL_INLINE_IMAGE_BYTES` в `src/lib/ai/request-validation.ts`) — сейчас не реализовано, так как размеры запросов MVP далеки от лимита
 

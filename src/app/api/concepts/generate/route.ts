@@ -7,14 +7,13 @@ import { getProvider } from "@/lib/ai/provider";
 import { withGenerationSlot } from "@/lib/ai/concurrency";
 import { notRunGeometryReport, reviewGeometrySafely } from "@/lib/ai/geometry-reviewer";
 import { getGeometryReviewer } from "@/lib/ai/reviewer-provider";
+import { requireAuthenticatedUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-// TODO: this route has no authentication and no per-user/IP rate limiting.
-// Both must be added before this endpoint is exposed in a public deployment
-// (see docs/09-TODO.md) — it currently relies on the app being unauthenticated
-// MVP-only and on the process-wide generation concurrency cap in
-// src/lib/ai/concurrency.ts, which is not a substitute for real rate limiting.
+// Authentication is enforced before validation or any provider call. A
+// distributed per-user/IP rate limit is still required before public launch;
+// the process-wide generation cap is only a local resource-safety bound.
 
 const VARIANT_TIMEOUT_MS = 90_000;
 const REVIEW_TIMEOUT_MS = 45_000;
@@ -30,6 +29,10 @@ interface VariantResponse {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAuthenticatedUser(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: { code: auth.code, message: auth.message } }, { status: auth.status });
+  }
   if (!process.env.GEMINI_API_KEY) {
     return errorResponse(new GenerationError("missing-api-key"), 500);
   }

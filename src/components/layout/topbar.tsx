@@ -1,5 +1,6 @@
-import { Bell } from "lucide-react";
+import { Bell, LogOut } from "lucide-react";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export function Topbar() {
   return (
@@ -20,6 +21,13 @@ export function Topbar() {
           </div>
           <span className="hidden text-sm font-medium text-ink sm:inline">Роман Васкин</span>
         </div>
+        {isSupabaseConfigured() ? (
+          <form action="/auth/signout" method="post">
+            <button type="submit" aria-label="Выйти" title="Выйти" className="flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-soft">
+              <LogOut className="h-4 w-4" />
+            </button>
+          </form>
+        ) : null}
       </div>
     </header>
   );
