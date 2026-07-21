@@ -86,10 +86,13 @@ export function ProjectList({ cloud, local, demo, loading, cloudError }: Project
       ) : null}
 
       {!hasRealProjects ? (
-        <EmptyState
-          title="Проектов пока нет"
-          description="Создайте первый проект — он появится здесь сразу после сохранения, локально или в облаке."
-        />
+        <>
+          <EmptyState
+            title="Проектов пока нет"
+            description="Создайте первый проект — он появится здесь сразу после сохранения, локально или в облаке."
+          />
+          <Section title="Демо" badge={<Badge>Демо</Badge>} items={filteredDemo} />
+        </>
       ) : !hasAnyResult ? (
         <EmptyState title="Ничего не найдено" description="Попробуйте изменить запрос или сбросить фильтр по статусу." />
       ) : (
@@ -98,8 +101,6 @@ export function ProjectList({ cloud, local, demo, loading, cloudError }: Project
           <Section title="Локально (не синхронизировано)" badge={<Badge variant="accent">Локально</Badge>} items={filteredLocal} />
         </>
       )}
-
-      <Section title="Демо" badge={<Badge>Демо</Badge>} items={filteredDemo} />
     </div>
   );
 }
