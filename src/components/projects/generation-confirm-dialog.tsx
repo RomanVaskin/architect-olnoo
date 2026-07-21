@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { GENERATION_MODE_LABELS, type GenerationMode } from "@/lib/types";
 import { SOURCE_VIEW_ROLE_LABELS, type SourceViewRole } from "@/lib/types";
 import { useBlobUrl } from "@/lib/use-blob-url";
+import { useDialogA11y } from "@/lib/use-dialog-a11y";
 
 const MODES: GenerationMode[] = ["auto", "fast", "balanced", "maximum-quality"];
 const VARIANT_COUNTS = [1, 3] as const;
@@ -117,9 +118,11 @@ export function GenerationConfirmDialog({
 }: GenerationConfirmDialogProps) {
   const controlsDisabled = isGenerating || persistenceFailed;
   const confirmBlockedByAcknowledgement = requiresRetryAcknowledgement && !retryAcknowledged;
+  // A dispatched paid request can't be dismissed by Escape — only the explicit "Отменить генерацию" action (which just aborts the browser-side wait, not the possible provider charge) is offered while isGenerating is true.
+  const dialogRef = useDialogA11y({ onClose, closeDisabled: isGenerating });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink/40 p-4" role="dialog" aria-modal="true" aria-labelledby="generation-dialog-title">
+    <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink/40 p-4" role="dialog" aria-modal="true" aria-labelledby="generation-dialog-title">
       <div className="my-auto max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-xl">
         <h2 id="generation-dialog-title" className="text-lg font-semibold text-ink">
           Подтвердите генерацию концепций

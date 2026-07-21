@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { safeRedirectPath } from "@/lib/safe-redirect-path";
 import { createClient } from "@/lib/supabase/server";
 
 function credentials(formData: FormData) {
@@ -24,7 +25,10 @@ export async function signIn(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) redirect(loginUrl("error", "invalid-credentials"));
-  redirect("/");
+  // Returns the visitor to the page they originally tried to open before the
+  // auth Proxy bounced them to /login?next=... (see src/lib/supabase/proxy.ts)
+  // instead of always dropping them on the Dashboard.
+  redirect(safeRedirectPath(formData.get("next")));
 }
 
 export async function signUp(formData: FormData) {
@@ -41,6 +45,6 @@ export async function signUp(formData: FormData) {
     options: { emailRedirectTo: `${origin}/auth/callback` },
   });
   if (error) redirect(loginUrl("error", "signup-failed"));
-  if (data.session) redirect("/");
+  if (data.session) redirect(safeRedirectPath(formData.get("next")));
   redirect(loginUrl("message", "check-email"));
 }

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { GENERATION_MODE_LABELS, type Concept, type GenerationMode } from "@/lib/types";
 import { correctionFindings } from "@/lib/concept-correction";
 import { useBlobUrl } from "@/lib/use-blob-url";
+import { useDialogA11y } from "@/lib/use-dialog-a11y";
 
 const MODES: GenerationMode[] = ["auto", "fast", "balanced", "maximum-quality"];
 
@@ -45,9 +46,11 @@ export function ConceptCorrectionDialog(props: ConceptCorrectionDialogProps) {
   const findings = correctionFindings(props.concept);
   const controlsDisabled = props.isGenerating || props.persistenceFailed;
   const confirmationBlocked = props.requiresAcknowledgement && !props.acknowledged;
+  // A dispatched paid request can't be dismissed by Escape while isGenerating — mirrors the disabled close button below.
+  const dialogRef = useDialogA11y({ onClose: props.onClose, closeDisabled: props.isGenerating });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink/40 p-4" role="dialog" aria-modal="true" aria-labelledby="correction-dialog-title">
+    <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink/40 p-4" role="dialog" aria-modal="true" aria-labelledby="correction-dialog-title">
       <div className="my-auto max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-xl">
         <h2 id="correction-dialog-title" className="text-lg font-semibold text-ink">Создать исправленную версию</h2>
         <p className="mt-2 text-sm leading-6 text-ink-secondary">

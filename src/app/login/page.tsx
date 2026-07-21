@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { safeRedirectPath } from "@/lib/safe-redirect-path";
 import { signIn, signUp } from "./actions";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -19,12 +20,14 @@ const INFO_MESSAGES: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; message?: string }>;
+  searchParams: Promise<{ error?: string; message?: string; next?: string }>;
 }) {
   const params = await searchParams;
   const configured = isSupabaseConfigured();
   const error = params.error ? ERROR_MESSAGES[params.error] ?? "Не удалось выполнить вход." : null;
   const message = params.message ? INFO_MESSAGES[params.message] ?? null : null;
+  // Re-validated server-side in signIn/signUp — this only avoids rendering an obviously unsafe value into the hidden field.
+  const next = safeRedirectPath(params.next);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-surface px-4 py-12">
@@ -43,6 +46,7 @@ export default async function LoginPage({
           {message ? <p className="mt-5 rounded-xl border border-positive-border bg-positive-soft p-3 text-sm text-positive">{message}</p> : null}
 
           <form className="mt-6 flex flex-col gap-4">
+            <input type="hidden" name="next" value={next} />
             <label className="flex flex-col gap-1.5 text-sm font-medium text-ink">
               Email
               <input name="email" type="email" autoComplete="email" required disabled={!configured} className="h-11 rounded-xl border border-border bg-surface px-3 text-sm outline-none transition focus:border-accent" />

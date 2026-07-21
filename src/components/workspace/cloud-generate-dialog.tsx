@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useDialogA11y } from "@/lib/use-dialog-a11y";
 import { GENERATION_MODE_LABELS, type GenerationMode } from "@/lib/types";
 
 const MODES: GenerationMode[] = ["auto", "fast", "balanced", "maximum-quality"];
@@ -48,9 +49,11 @@ export function CloudGenerateDialog({
 }: CloudGenerateDialogProps) {
   const controlsDisabled = isGenerating || persistenceFailed;
   const confirmBlocked = requiresAcknowledgement && !acknowledged;
+  // A dispatched paid request can't be dismissed by Escape while isGenerating — mirrors the disabled Cancel button below.
+  const dialogRef = useDialogA11y({ onClose, closeDisabled: isGenerating });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink/40 p-4" role="dialog" aria-modal="true" aria-labelledby="cloud-generate-dialog-title">
+    <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink/40 p-4" role="dialog" aria-modal="true" aria-labelledby="cloud-generate-dialog-title">
       <div className="my-auto max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-xl">
         <h2 id="cloud-generate-dialog-title" className="text-lg font-semibold text-ink">
           Сгенерировать концепцию
