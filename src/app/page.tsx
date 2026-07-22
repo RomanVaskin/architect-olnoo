@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { PageHeader } from "@/components/ui/page-header";
 import { StatTile } from "@/components/ui/stat-tile";
 import { ProjectCard } from "@/components/projects/project-card";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +10,6 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { PendingDecisions } from "@/components/dashboard/pending-decisions";
 import { ActivityFeed } from "@/components/workspace/activity-feed";
 import { useDashboardData } from "@/lib/use-dashboard-data";
-import { projects as demoProjects } from "@/lib/mock-data";
 
 const NEW_PROJECT_ACTION = (
   <Link
@@ -39,17 +37,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-10">
-      <PageHeader
-        title="С возвращением"
-        description="Вот что происходит в ваших проектах прямо сейчас."
-        action={NEW_PROJECT_ACTION}
-      />
 
-      {cloudError ? (
-        <p role="alert" className="rounded-xl border border-border bg-surface-soft px-4 py-3 text-sm text-ink-secondary">
-          {cloudError} Показаны только данные, которые удалось загрузить.
-        </p>
-      ) : null}
 
       {loading ? (
         <LoadingState label="Загрузка дашборда…" />
@@ -102,22 +90,6 @@ export default function DashboardPage() {
             </section>
           </div>
 
-          {!hasAnyRealProject ? (
-            <section className="flex flex-col gap-4">
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-semibold text-ink">Пример проекта</h2>
-                <Badge>Демо</Badge>
-              </div>
-              <p className="text-sm text-ink-secondary">
-                Демонстрационные данные ниже — не ваш проект и не сохраняются в вашем аккаунте. Показаны, чтобы было видно, как выглядит рабочее пространство.
-              </p>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {demoProjects.slice(0, 3).map((project) => (
-                  <ProjectCard key={project.id} project={project} originBadge={<Badge>Демо</Badge>} />
-                ))}
-              </div>
-            </section>
-          ) : null}
         </>
       )}
     </div>
