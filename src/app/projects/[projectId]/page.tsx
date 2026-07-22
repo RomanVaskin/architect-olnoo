@@ -11,6 +11,7 @@ import { LinkButton } from "@/components/ui/button";
 import { PROJECT_LIFECYCLE_LABELS } from "@/lib/types";
 import { GeometryVerificationLine } from "@/components/workspace/geometry-verification-summary";
 import { isLocalProjectId, isServerProjectId } from "@/lib/project-id";
+import { findLatestGeneratedConcept } from "@/lib/project-cover";
 
 export default function ProjectOverviewPage() {
   const { project } = useProjectContext();
@@ -27,7 +28,7 @@ export default function ProjectOverviewPage() {
   // generated image or nothing at all — they must never show the decorative
   // demo scene or claim geometry was preserved/verified.
   const isRealProject = isLocalProjectId(project.id) || isServerProjectId(project.id);
-  const latestGeneratedConcept = [...project.concepts].reverse().find((concept) => concept.generatedImage);
+  const latestGeneratedConcept = findLatestGeneratedConcept(project.concepts);
 
   return (
     <div className="flex flex-col gap-8">

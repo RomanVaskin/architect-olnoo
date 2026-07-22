@@ -1,4 +1,5 @@
 import type { Project, ProjectState, Site } from "./types";
+import { projectCoverFields } from "./project-cover";
 import type { ServerProjectSummary } from "./server/project-repository";
 import type { DashboardActivityItem, DashboardPendingDecision, DashboardSummary } from "./server/dashboard-repository";
 
@@ -20,6 +21,8 @@ export interface DashboardRecentProject {
   state: ProjectState;
   updatedAt: string;
   coverImage: string;
+  /** Set only for local (IndexedDB) projects — see resolveProjectCover. */
+  coverImageBlob?: Blob;
   origin: "cloud" | "local";
 }
 
@@ -138,7 +141,7 @@ export function buildDashboardView(
     lifecycleStage: project.lifecycleStage,
     state: project.state,
     updatedAt: project.updatedAt,
-    coverImage: project.coverImage,
+    ...projectCoverFields(project),
     origin: "local",
   }));
 

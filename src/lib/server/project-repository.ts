@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Concept, Feedback, Project, ProjectLifecycleStage, ProjectState, Site } from "@/lib/types";
+import { resolveProjectCover } from "../project-cover";
 import { signPath, signPaths } from "./project-assets";
 import {
   mapActivityEventRow,
@@ -64,29 +65,37 @@ export async function listServerProjects(supabase: SupabaseClient): Promise<Serv
   });
 }
 
-/** One primary-source-view photo, or else the newest concept image, per project — used only for the decorative list thumbnail. */
+/**
+ * The newest concept image, or else the primary-source-view file, per
+ * project — the same priority `resolveProjectCover` (src/lib/project-cover.ts)
+ * applies once a project's full concepts/sourceViews/sourceFiles are loaded,
+ * reimplemented here at the raw storage-path level so the list endpoint can
+ * batch-sign only the one path each project actually needs instead of
+ * fetching and signing every file for every project up front. The primary
+ * view's file can legitimately be any source kind (`photo`, `drawing`,
+ * `document` — nothing constrains a Primary Source View to a photo), so the
+ * lookup below is not narrowed to `photo` alone.
+ */
 async function resolveCoverPaths(supabase: SupabaseClient, projectIds: string[]): Promise<Map<string, string>> {
   const covers = new Map<string, string>();
 
-  const primaryViews = await supabase
-    .from("source_views")
-    .select("project_id,source_file_id")
-    .in("project_id", projectIds)
-    .eq("is_primary", true);
+  const [primaryViews, files] = await Promise.all([
+    supabase.from("source_views").select("project_id,source_file_id").in("project_id", projectIds).eq("is_primary", true),
+    supabase
+      .from("project_files")
+      .select("id,project_id,kind,storage_path,created_at")
+      .in("project_id", projectIds)
+      .in("kind", ["photo", "drawing", "document", "concept"])
+      .not("storage_path", "is", null)
+      .order("created_at", { ascending: false }),
+  ]);
   failOnDatabaseError(primaryViews.error, "cover-primary-views");
+  failOnDatabaseError(files.error, "cover-files");
+
   const primaryFileIdByProject = new Map<string, string>();
   for (const row of (primaryViews.data ?? []) as Array<{ project_id: string; source_file_id: string }>) {
     primaryFileIdByProject.set(row.project_id, row.source_file_id);
   }
-
-  const files = await supabase
-    .from("project_files")
-    .select("id,project_id,kind,storage_path,created_at")
-    .in("project_id", projectIds)
-    .in("kind", ["photo", "concept"])
-    .not("storage_path", "is", null)
-    .order("created_at", { ascending: false });
-  failOnDatabaseError(files.error, "cover-files");
 
   const newestConceptByProject = new Map<string, string>();
   const fileById = new Map<string, { project_id: string; storage_path: string }>();
@@ -101,7 +110,7 @@ async function resolveCoverPaths(supabase: SupabaseClient, projectIds: string[])
   for (const projectId of projectIds) {
     const primaryFileId = primaryFileIdByProject.get(projectId);
     const primaryPath = primaryFileId ? fileById.get(primaryFileId)?.storage_path : undefined;
-    const path = primaryPath ?? newestConceptByProject.get(projectId);
+    const path = newestConceptByProject.get(projectId) ?? primaryPath;
     if (path) covers.set(projectId, path);
   }
   return covers;
@@ -149,13 +158,11 @@ export async function getServerProjectDetail(supabase: SupabaseClient, projectId
   const activity = ((activityResult.data ?? []) as ActivityEventRow[]).map(mapActivityEventRow);
 
   const project = mapProjectRow(projectRow);
-  const coverConcept = [...concepts].reverse().find((concept) => concept.generatedImage?.url);
-  const primaryView = sourceViews.find((view) => view.isPrimary);
-  const primaryFileUrl = primaryView ? sourceFiles.find((file) => file.id === primaryView.sourceImageId)?.imageUrl : undefined;
+  const cover = resolveProjectCover(concepts, sourceViews, sourceFiles);
 
   return {
     ...project,
-    coverImage: primaryFileUrl ?? coverConcept?.generatedImage?.url ?? "",
+    coverImage: cover.url ?? "",
     sourceFiles,
     sourceViews,
     concepts,

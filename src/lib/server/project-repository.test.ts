@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { addConceptFeedback, getServerProjectDetail, ProjectRepositoryError, setSelectedConcept } from "./project-repository";
+import { addConceptFeedback, getServerProjectDetail, listServerProjects, ProjectRepositoryError, setSelectedConcept } from "./project-repository";
 
 type Result = { data: unknown; error: { message: string } | null };
 
@@ -12,6 +12,10 @@ type Result = { data: unknown; error: { message: string } | null };
  * directly — supabase-js query builders are themselves thenable). Keyed by
  * table name only; each test configures exactly the tables its scenario
  * touches, since one function call only ever needs one shape per table.
+ *
+ * `createSignedUrl` echoes the requested path back inside the "signed" URL
+ * (rather than a fixed string) so cover-image tests can assert on *which*
+ * storage path actually got signed, not just that signing happened.
  */
 function fakeSupabase(resultsByTable: Record<string, Result>, signedUrl: string | null = "https://signed.example/x.jpg") {
   function builder(table: string): PromiseLike<Result> & Record<string, unknown> {
@@ -35,7 +39,10 @@ function fakeSupabase(resultsByTable: Record<string, Result>, signedUrl: string 
   return {
     from: builder,
     storage: {
-      from: () => ({ createSignedUrl: async () => (signedUrl ? { data: { signedUrl }, error: null } : { data: null, error: { message: "not found" } }) }),
+      from: () => ({
+        createSignedUrl: async (path: string) =>
+          signedUrl ? { data: { signedUrl: `${signedUrl}#${path}` }, error: null } : { data: null, error: { message: "not found" } },
+      }),
     },
   } as unknown as SupabaseClient;
 }
@@ -87,6 +94,73 @@ test("getServerProjectDetail maps a minimal project with no files/concepts to an
   assert.deepEqual(project.sourceFiles, []);
   assert.deepEqual(project.concepts, []);
   assert.equal(project.coverImage, "");
+});
+
+function projectRow(id: string) {
+  return {
+    id,
+    name: id,
+    building_type: "Частный дом",
+    lifecycle_stage: "intake",
+    state: "draft",
+    site: {},
+    brief: {},
+    selected_concept_id: null,
+    updated_at: "now",
+  };
+}
+
+test("listServerProjects returns an empty summary (no cover queries) when the account has no projects", async () => {
+  const supabase = fakeSupabase({ projects: { data: [], error: null } });
+  assert.deepEqual(await listServerProjects(supabase), []);
+});
+
+test("listServerProjects resolves the cover from the Primary Source View even when that file's kind is drawing/document, not just photo", async () => {
+  const supabase = fakeSupabase({
+    projects: { data: [projectRow("p-1")], error: null },
+    source_views: { data: [{ project_id: "p-1", source_file_id: "f-1" }], error: null },
+    project_files: { data: [{ id: "f-1", project_id: "p-1", kind: "drawing", storage_path: "p-1/plan.png", created_at: "2026-01-01" }], error: null },
+  });
+  const [summary] = await listServerProjects(supabase);
+  assert.match(summary.coverImage, /p-1\/plan\.png$/);
+});
+
+test("listServerProjects prefers the newest concept image over the primary source photo, matching the detail page", async () => {
+  const supabase = fakeSupabase({
+    projects: { data: [projectRow("p-1")], error: null },
+    source_views: { data: [{ project_id: "p-1", source_file_id: "f-1" }], error: null },
+    // Pre-sorted newest-first, as the real `.order("created_at", { ascending: false })` call would return.
+    project_files: {
+      data: [
+        { id: "f-3", project_id: "p-1", kind: "concept", storage_path: "p-1/concept-new.jpg", created_at: "2026-01-03" },
+        { id: "f-2", project_id: "p-1", kind: "concept", storage_path: "p-1/concept-old.jpg", created_at: "2026-01-02" },
+        { id: "f-1", project_id: "p-1", kind: "photo", storage_path: "p-1/photo.jpg", created_at: "2026-01-01" },
+      ],
+      error: null,
+    },
+  });
+  const [summary] = await listServerProjects(supabase);
+  assert.match(summary.coverImage, /p-1\/concept-new\.jpg$/);
+});
+
+test("listServerProjects falls back to the primary source photo when no concept image exists yet", async () => {
+  const supabase = fakeSupabase({
+    projects: { data: [projectRow("p-1")], error: null },
+    source_views: { data: [{ project_id: "p-1", source_file_id: "f-1" }], error: null },
+    project_files: { data: [{ id: "f-1", project_id: "p-1", kind: "photo", storage_path: "p-1/photo.jpg", created_at: "2026-01-01" }], error: null },
+  });
+  const [summary] = await listServerProjects(supabase);
+  assert.match(summary.coverImage, /p-1\/photo\.jpg$/);
+});
+
+test("listServerProjects leaves coverImage empty (decorative placeholder) when neither a concept nor a primary photo exists", async () => {
+  const supabase = fakeSupabase({
+    projects: { data: [projectRow("p-1")], error: null },
+    source_views: { data: [], error: null },
+    project_files: { data: [], error: null },
+  });
+  const [summary] = await listServerProjects(supabase);
+  assert.equal(summary.coverImage, "");
 });
 
 test("setSelectedConcept rejects a concept id that does not belong to the project as invalid-request", async () => {

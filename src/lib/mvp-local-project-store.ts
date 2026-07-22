@@ -221,7 +221,7 @@ export async function createDraftProject(input: DraftProjectInput): Promise<stri
     id,
     name: input.name,
     buildingType: input.buildingType,
-    coverImage: id,
+    coverImage: "",
     lifecycleStage: "intake",
     state: "draft",
     updatedAt: now,
